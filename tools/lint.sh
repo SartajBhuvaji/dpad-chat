@@ -64,6 +64,30 @@ else
     printf '  ok    no prose comments read as directives\n'
 fi
 
+printf '\nChecking line endings\n'
+# A CR at the end of `#!/bin/sh` makes the kernel look for an interpreter named
+# "/bin/sh\r", which does not exist. busybox reports that as "not found" for a
+# file that is plainly there, so the search starts at paths and permissions and
+# never gets near the real cause. A checkout on a Windows filesystem is where
+# the CRs come from; .gitattributes prevents it and this catches it anyway,
+# because the working tree can be rewritten by anything.
+carriage=''
+for script in $scripts; do
+    if grep -q "$(printf '\r')" "$script" 2>/dev/null; then
+        carriage="$carriage $script"
+    fi
+done
+if [ -n "$carriage" ]; then
+    for offender in $carriage; do
+        printf '  FAIL  %s (carriage returns)\n' "$offender"
+    done
+    printf '        fix: git checkout -- . after confirming .gitattributes is present\n'
+    status=1
+else
+    printf '  ok    no carriage returns in %s file(s)\n' \
+        "$(printf '%s\n' "$scripts" | wc -l | tr -d ' ')"
+fi
+
 printf '\nChecking executable bits\n'
 if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # Checkouts on a Windows filesystem silently drop the mode bit, which fails

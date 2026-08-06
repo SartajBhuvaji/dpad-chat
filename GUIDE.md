@@ -286,6 +286,32 @@ Check the path is exactly `/mnt/SDCARD/App/DPadChat/config.json` — one level t
 the usual cause, from unzipping into a subfolder instead of the card root. Onion reads the
 menu at boot, so power-cycle after fixing it.
 
+**`chat.sh: not found`, but the file is right there.**
+The scripts have Windows line endings. The device execs them by their shebang, and a CR
+at the end of `#!/bin/sh` makes the kernel look for an interpreter named `/bin/sh\r` — so
+the thing reported as missing is the interpreter, not the script, and the message does not
+say so.
+
+Check it over SSH:
+
+```sh
+head -1 /mnt/SDCARD/App/DPadChat/chat.sh | od -c | head -1
+```
+
+If the first line ends `s h \r \n` rather than `s h \n`, that is it. Fix it in place:
+
+```sh
+cd /mnt/SDCARD/App/DPadChat
+for f in chat.sh launch.sh apply-update.sh lib/*.sh; do
+    sed -i 's/\r$//' "$f"
+done
+```
+
+Or reinstall from a [release][releases] zip, which is built on Linux and never carries
+them. This only happens when installing from a checkout on a Windows filesystem;
+`.gitattributes` pins the endings and `make check` refuses to lint a tree that has them,
+so a fresh clone is not affected.
+
 **It appears but does nothing when launched.**
 Almost always a missing executable bit, which Windows and macOS filesystems drop when
 copying. Over SSH:

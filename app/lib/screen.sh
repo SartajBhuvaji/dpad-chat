@@ -227,8 +227,8 @@ _spin_init_tick() {
 
 _spin_glyph() {
     _g_n="$1"
-    # A single-quoted backslash is one literal backslash and needs no escaping;
-    # shellcheck reads it as a misplaced quote escape.
+    # A single-quoted backslash is one literal backslash and needs no escaping.
+    # The checker reads it as a misplaced quote escape instead.
     # shellcheck disable=SC1003
     case $((_g_n % 4)) in
         0) SPIN_GLYPH='-' ;;

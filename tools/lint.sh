@@ -47,6 +47,23 @@ else
     printf '  skipped: shellcheck not installed\n'
 fi
 
+printf '\nChecking shellcheck directive comments\n'
+# A comment whose first word is "shellcheck" is read as a directive. Prose there
+# is a parse error that makes the entire file unanalysable, and the only sign is
+# an SC1094 on whatever sourced it, so real findings hide behind it.
+# shellcheck disable=SC2086
+directive_prose=$(grep -nE '^[[:space:]]*#[[:space:]]*shellcheck[[:space:]]' $scripts |
+    grep -vE 'shellcheck (disable|enable|source|source-path|shell|external-sources)=' || true)
+if [ -n "$directive_prose" ]; then
+    printf '%s\n' "$directive_prose" | while IFS= read -r offender; do
+        printf '  FAIL  %s\n' "$offender"
+    done
+    printf '        reword so the comment does not begin with "shellcheck"\n'
+    status=1
+else
+    printf '  ok    no prose comments read as directives\n'
+fi
+
 printf '\nChecking executable bits\n'
 if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # Checkouts on a Windows filesystem silently drop the mode bit, which fails

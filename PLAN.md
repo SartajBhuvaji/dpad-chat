@@ -7,6 +7,11 @@ inside Onion's bundled `st` terminal (which supplies the on-screen keyboard for 
 scope — v1 will detect the absence of a network interface and show a clear message rather
 than pretend to work.
 
+> This is the design record: why things are built the way they are, and what was
+> deliberately left out. For using the app, see [README.md](README.md),
+> [GUIDE.md](GUIDE.md) for installing it, and [COMMANDS.md](COMMANDS.md) for the commands
+> and settings.
+
 ---
 
 ## 1. Why shell + `st`
@@ -492,6 +497,21 @@ The keyboard is validated on hardware; everything else is validated in the conta
    exercised where `st` is absent. This is the one part of `/update` that no test covers.
 10. Is `/mnt/SDCARD` writable by the launcher at that point in the boot, and does the card
    have room for a second copy of the app (~150 KB) while it is being staged?
+
+### Release process
+
+Every pull request carries exactly one version label — `major`, `minor` or `patch` — and
+CI fails without it. On merge, the release workflow bumps `DPADCHAT_VERSION`, tags, and
+publishes two archives.
+
+`app/lib/common.sh` is the single source of truth for the version. Tags and releases are
+derived from it, not the other way round, so a checkout at any commit reports the same
+version the app prints in `/about`.
+
+Two archives because they have two audiences. The `.zip` is what a person downloads and
+unpacks on a desktop. The `.tar.gz` is what `/update` fetches: busybox always has `tar`
+and `gzip`, while `unzip` is an optional applet that may not be on the device, and finding
+that out after the download is too late. Both are byte-reproducible from the same tree.
 
 ---
 

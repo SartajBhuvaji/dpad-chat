@@ -1,6 +1,7 @@
 # Runtime state. Holds the API key and conversation history, and must never
 # reach the repository.
 app/data/
+dist/
 *.log
 *.log.1
 

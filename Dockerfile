@@ -27,4 +27,4 @@ ENV COLUMNS=40 \
 COPY . /src
 
 ENTRYPOINT ["/bin/busybox", "ash"]
-CMD ["-c", "tools/lint.sh && tests/smoke.sh && tests/api.sh && tests/net.sh && tests/history.sh"]
+CMD ["-c", "tools/lint.sh && tests/smoke.sh && tests/api.sh && tests/net.sh && tests/history.sh && tests/release.sh"]

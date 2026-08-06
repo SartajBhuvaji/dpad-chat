@@ -18,7 +18,12 @@ and read the reply.
 
 ## Install
 
-Copy `app/` to `/mnt/SDCARD/App/DPadChat/` on the SD card, or use the installer:
+Download the zip from [Releases](https://github.com/SartajBhuvaji/dpad-chat/releases) and
+unpack it onto the root of the SD card, so the app lands in
+`/mnt/SDCARD/App/DPadChat/`.
+
+To install from a checkout instead, copy `app/` to `/mnt/SDCARD/App/DPadChat/`, or use
+the installer:
 
 ```sh
 make install CARD=/media/you/MIYOO
@@ -98,6 +103,7 @@ make sim           # run locally, pinned to the device's 40-column terminal
 make test-docker   # same suite under Alpine's busybox ash
 make mock          # run the mock API on :8080 to poke at by hand
 make cacert        # refresh the bundled CA certificates
+make package       # build the release archive
 ```
 
 `tests/api.sh` drives the client against `tools/mockapi.py`, a scriptable stand-in for
@@ -172,6 +178,23 @@ The key is never written to the log, never printed in full on screen — `/about
 redacted — and reaches curl through a mode-600 config file rather than the command line,
 where any other process could read it. All three are covered by tests.
 
+## Releases
+
+Every pull request carries exactly one label — `major`, `minor` or `patch` — and CI
+fails without it. On merge, the release workflow bumps `DPADCHAT_VERSION`, tags, and
+publishes an archive that unpacks onto an SD card.
+
+`app/lib/common.sh` is the single source of truth for the version; tags and releases are
+derived from it, so a checkout at any commit reports the same version the app prints in
+`/about`.
+
+```sh
+make version    # what is this checkout
+make package    # build the archive locally
+```
+
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Third-party credits are in
+[ATTRIBUTION.md](ATTRIBUTION.md) — the icon derives from Icons8 art, and the CA bundle
+comes from the curl project.

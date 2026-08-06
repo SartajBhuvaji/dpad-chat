@@ -33,6 +33,9 @@ jobs:
       - name: History tests
         run: tests/history.sh
 
+      - name: Release tests
+        run: tests/release.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest
@@ -53,7 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Guards against the committed PNG drifting from its generator.
+      # Guards against the committed PNG drifting from its generator or its
+      # source art.
       - name: Regenerate and compare
         run: |
           python3 tools/make_icon.py

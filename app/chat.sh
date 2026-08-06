@@ -4,8 +4,8 @@
 # Runs inside Onion's bundled `st` terminal, which supplies the on-screen
 # keyboard. See PLAN.md for the full design and milestone breakdown.
 #
-# Milestone M4: verified TLS, clock sync, and network preflight.
-# Conversation history arrives in M2, interactive key entry in M3.
+# Milestone M2: multi-turn conversation. Interactive key entry arrives in M3,
+# streaming replies in M5.
 
 # Resolve sourced files relative to this script. Must precede the first command
 # to apply file-wide; attached to a single command it only covers that line.
@@ -24,6 +24,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/config.sh"
 # shellcheck source=lib/net.sh
 . "$APP_DIR/lib/net.sh"
+# shellcheck source=lib/history.sh
+. "$APP_DIR/lib/history.sh"
 # shellcheck source=lib/api.sh
 . "$APP_DIR/lib/api.sh"
 
@@ -36,6 +38,7 @@ API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
 
 cmd_help() {
     ui_info '/help   this list'
+    ui_info '/new    start a new conversation'
     ui_info '/clear  clear the screen'
     ui_info '/about  version and settings'
     ui_info '/quit   exit'
@@ -61,6 +64,7 @@ cmd_about() {
     fi
     ui_info "model    $CFG_MODEL"
     ui_info "key      $(config_redact_key)"
+    ui_info "history  $(history_count) of $CFG_HISTORY_MESSAGES msgs"
     ui_info "tls      $(_about_tls)"
     ui_info "net      $(_about_net)"
     ui_info "data     $DATA_DIR"
@@ -88,6 +92,21 @@ _about_net() {
     fi
 }
 
+# Forgetting is a destructive action the user cannot undo, so it says so.
+cmd_new() {
+    if history_is_empty; then
+        ui_info 'Already a new conversation.'
+        return 0
+    fi
+
+    count=$(history_count)
+    if history_reset "$CFG_SYSTEM_PROMPT"; then
+        ui_info "Started a new conversation ($count messages forgotten)."
+    else
+        ui_error 'Could not clear the conversation.'
+    fi
+}
+
 # Returns 0 when the input was handled as a command, 1 when it is chat text.
 dispatch_command() {
     case "$1" in
@@ -99,6 +118,9 @@ dispatch_command() {
         /clear | /cls)
             ui_clear
             ui_banner
+            ;;
+        /new | /reset)
+            cmd_new
             ;;
         /about | /version)
             cmd_about
@@ -125,16 +147,28 @@ dispatch_command() {
 # on, because losing the session to a dropped WiFi packet would be worse than
 # any error it could report.
 chat_respond() {
+    if ! history_append user "$1"; then
+        ui_error 'Could not record the message.'
+        return 0
+    fi
+
     ui_thinking
 
     # api_send must run in this shell, not a command substitution: its results
     # come back in API_REPLY and API_ERROR, which a subshell would discard.
-    if api_send "$1"; then
+    if api_send "$(history_path)"; then
         ui_clear_line
         ui_assistant "$API_REPLY"
+        history_append assistant "$API_REPLY"
+        history_trim "$CFG_HISTORY_MESSAGES"
     else
         ui_clear_line
         ui_error "$API_ERROR"
+
+        # Roll back the unanswered question. Leaving it would send it again as
+        # context next turn, so the model would see a question it never
+        # answered and the user would watch it steer later replies.
+        history_drop_last
     fi
 }
 
@@ -181,6 +215,8 @@ main() {
     require_cmd fold sed date curl jq mktemp
 
     config_load "$DATA_DIR"
+    history_init "$DATA_DIR" "$CFG_SYSTEM_PROMPT" ||
+        die "Cannot write history to $DATA_DIR"
 
     ui_init
     ui_clear

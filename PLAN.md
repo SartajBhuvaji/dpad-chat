@@ -328,7 +328,7 @@ The REPL never dies on a failed request — errors return to the prompt.
 |---|---|---|
 | **M0** | Package scaffold + `config.json` + icon | "D-Pad Chat" appears in Onion's Apps menu and launches `st` |
 | **M1** | Client, settings, mock server | Done. Single-turn requests; every failure path tested |
-| **M2** | Interactive REPL + history + trimming | Multi-turn conversation with context holds up |
+| **M2** | Interactive REPL + history + trimming | Done. Multi-turn context, trimming, rollback on failure |
 | **M3** | First-run key entry, `settings.cfg`, slash commands | Fresh install is usable with no file editing |
 | **M4** | Robustness pass (§8) + clock sync + `--cacert` | Done. Verified TLS with no fallback, route and clock preflight |
 | **M5** | Streaming replies | Tokens appear progressively (see below) |

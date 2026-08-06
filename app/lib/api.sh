@@ -32,7 +32,7 @@ API_CACERT="${DPAD_CACERT:-}"
 # Request
 # -----------------------------------------------------------------------------
 
-# api_send <prompt>
+# api_send <messages-file>
 api_send() {
     API_REPLY=''
     API_ERROR=''
@@ -103,22 +103,18 @@ _api_cleanup() {
     API_WORK=''
 }
 
-# jq builds the JSON so that quotes, newlines and backslashes in user input are
-# escaped properly. Interpolating the prompt into a string would let any
-# apostrophe corrupt the request.
+# The messages array is read from the transcript rather than assembled here, so
+# the request carries the whole conversation. jq does the escaping, so quotes
+# and newlines anywhere in the history cannot corrupt the request.
 _api_build_payload() {
     jq -n \
         --arg model "$CFG_MODEL" \
-        --arg system "$CFG_SYSTEM_PROMPT" \
-        --arg user "$1" \
         --argjson max_tokens "$CFG_MAX_TOKENS" \
+        --slurpfile messages "$1" \
         '{
             model: $model,
             max_tokens: $max_tokens,
-            messages: [
-                { role: "system", content: $system },
-                { role: "user", content: $user }
-            ]
+            messages: $messages[0]
         }'
 }
 

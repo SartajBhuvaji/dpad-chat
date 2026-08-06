@@ -76,6 +76,7 @@ jobs:
           tests/net.sh
           tests/history.sh
           tests/release.sh
+          tests/install.sh
 
       - name: Build the archive
         run: python3 tools/package.py

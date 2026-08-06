@@ -10,9 +10,9 @@
 # conversation, and chat.sh replays the most recent turns so the context is
 # visible rather than merely implied.
 #
-# That makes clearing destructive in a way it was not before, so every reset
-# leaves the outgoing transcript in history.json.prev. Nothing reads it back,
-# but it means a mistyped /c has not thrown away an afternoon.
+# Clearing is therefore destructive, and deliberately so: a reset disposes of
+# the conversation rather than filing a copy beside it. A transcript still
+# readable on a removable card is not cleared in any sense a user would mean.
 
 # SC2016: the jq programs below use $role, $content and $limit, which are jq
 # variables bound by --arg and --argjson. Single quotes are required — letting
@@ -75,13 +75,12 @@ _history_set_system() {
     _history_write --arg content "$1" '.[0] = { role: "system", content: $content }'
 }
 
-# Starts a fresh transcript containing only the system prompt. The outgoing one
-# is kept alongside, because clearing is now the only way to lose a conversation
-# that would otherwise have survived a restart.
+# Starts a fresh transcript containing only the system prompt. The outgoing
+# conversation is not kept: clearing means gone.
 history_reset() {
-    if [ -s "$HISTORY_FILE" ]; then
-        cp -f "$HISTORY_FILE" "$HISTORY_FILE.prev" 2>/dev/null || :
-    fi
+    # Also removes the copy earlier versions filed here, so upgrading disposes
+    # of the conversation they held onto rather than leaving it on the card.
+    rm -f "$HISTORY_FILE.prev" 2>/dev/null || :
 
     jq -n --arg content "$1" '[{ role: "system", content: $content }]' \
         >"$HISTORY_FILE" || return 1

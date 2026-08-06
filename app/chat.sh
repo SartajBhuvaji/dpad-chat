@@ -96,22 +96,19 @@ _about_net() {
     fi
 }
 
-# Now that chats survive a restart, clearing is the only way to lose one, so it
-# says what it discarded and where the copy went.
+# An empty screen is the confirmation: reporting what was just discarded leaves
+# the first thing in a new chat being a note about the old one. The failure is
+# still announced, because silence there would look identical to success.
 cmd_new() {
     if history_is_empty; then
         screen_clear
         chat_header
-        ui_info 'Already a new chat.'
         return 0
     fi
 
-    count=$(history_count)
     if history_reset "$CFG_SYSTEM_PROMPT"; then
         screen_clear
         chat_header
-        ui_info "New chat. $count messages cleared."
-        ui_info 'The previous one is in data/history.json.prev'
     else
         ui_error 'Could not clear the chat.'
     fi

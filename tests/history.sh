@@ -174,25 +174,24 @@ assert_says 'the session continues after a failure' "$out" 'You said: hello'
 # -----------------------------------------------------------------------------
 
 out=$(session new 'hello' '/clear' '/quit')
-assert_says '/clear reports what it cleared' "$out" '2 messages cleared'
 assert_eq '/clear empties the transcript' "$(hist new 'length')" '1'
 assert_eq '/clear keeps the system prompt' "$(hist new '.[0].role')" 'system'
 
-# Clearing is now the only way to lose a chat that would have survived a
-# restart, so the outgoing one is kept.
-if [ -s "$WORK_DIR/new/history.json.prev" ]; then
-    pass '/clear keeps the previous chat on disk'
+# Cleared means gone: nothing is filed beside the transcript, and nothing on
+# screen recounts what was just discarded.
+if [ -e "$WORK_DIR/new/history.json.prev" ]; then
+    fail '/clear leaves no copy on disk' 'history.json.prev exists'
 else
-    fail '/clear keeps the previous chat on disk'
+    pass '/clear leaves no copy on disk'
 fi
-assert_says '/clear says where the copy went' "$out" 'history.json.prev'
+refute_says '/clear does not name a copy' "$out" 'history.json.prev'
+refute_says '/clear does not count what it discarded' "$out" 'messages cleared'
 
 out=$(session shortc 'hello' '/c' '/quit')
-assert_says '/c is an alias for /clear' "$out" '2 messages cleared'
-assert_eq '/c empties the transcript' "$(hist shortc 'length')" '1'
+assert_eq '/c is an alias for /clear' "$(hist shortc 'length')" '1'
 
 out=$(session new2 '/clear' '/quit')
-assert_says '/clear on an empty chat says so' "$out" 'Already a new chat'
+refute_says '/clear on an empty chat says nothing about it' "$out" 'Already a new chat'
 
 # -----------------------------------------------------------------------------
 # Persistence

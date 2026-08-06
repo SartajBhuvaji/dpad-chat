@@ -170,27 +170,79 @@ out=$(session rollback2 'scenario:server_error' 'hello' '/quit')
 assert_says 'the session continues after a failure' "$out" 'You said: hello'
 
 # -----------------------------------------------------------------------------
-# /new
+# /clear
 # -----------------------------------------------------------------------------
 
-out=$(session new 'hello' '/new' '/quit')
-assert_says '/new reports what it forgot' "$out" '2 messages forgotten'
-assert_eq '/new empties the transcript' "$(hist new 'length')" '1'
-assert_eq '/new keeps the system prompt' "$(hist new '.[0].role')" 'system'
+out=$(session new 'hello' '/clear' '/quit')
+assert_says '/clear reports what it cleared' "$out" '2 messages cleared'
+assert_eq '/clear empties the transcript' "$(hist new 'length')" '1'
+assert_eq '/clear keeps the system prompt' "$(hist new '.[0].role')" 'system'
 
-out=$(session new2 '/new' '/quit')
-assert_says '/new on an empty conversation says so' "$out" 'Already a new conversation'
+# Clearing is now the only way to lose a chat that would have survived a
+# restart, so the outgoing one is kept.
+if [ -s "$WORK_DIR/new/history.json.prev" ]; then
+    pass '/clear keeps the previous chat on disk'
+else
+    fail '/clear keeps the previous chat on disk'
+fi
+assert_says '/clear says where the copy went' "$out" 'history.json.prev'
+
+out=$(session shortc 'hello' '/c' '/quit')
+assert_says '/c is an alias for /clear' "$out" '2 messages cleared'
+assert_eq '/c empties the transcript' "$(hist shortc 'length')" '1'
+
+out=$(session new2 '/clear' '/quit')
+assert_says '/clear on an empty chat says so' "$out" 'Already a new chat'
 
 # -----------------------------------------------------------------------------
-# Persistence is deliberately absent
+# Persistence
 # -----------------------------------------------------------------------------
 
 session persist 'remember this' '/quit' >/dev/null
 assert_eq 'the first session recorded its turn' "$(hist persist 'length')" '3'
 
 out=$(session persist '/about' '/quit')
-assert_says 'a restart begins a new conversation' "$out" 'history 0 of'
-assert_eq 'the transcript is truncated at startup' "$(hist persist 'length')" '1'
+assert_says 'a restart resumes the conversation' "$out" 'history 2 of'
+assert_eq 'the transcript survives a restart' "$(hist persist 'length')" '3'
+assert_says 'the resumed turn is shown on screen' "$out" 'remember this'
+assert_says 'a resumed session says so' "$out" '-- resumed'
+
+# The context must still be sent, not merely displayed.
+out=$(session persist 'scenario:echo_payload' '/quit')
+assert_says 'a resumed conversation is sent as context' "$out" 'remember this'
+
+# The system prompt lives in settings, so editing it has to take effect on the
+# next launch rather than waiting for a new conversation.
+out=$(DPAD_SYSTEM_PROMPT_UNUSED=1 session persist '/quit')
+assert_eq 'the system prompt stays at index 0' "$(hist persist '.[0].role')" 'system'
+
+# A half-written file survives a battery pull; it must not take the app down.
+mkdir -p "$WORK_DIR/corrupt"
+printf '{"not": "an array"' >"$WORK_DIR/corrupt/history.json"
+out=$(session corrupt '/about' '/quit')
+assert_says 'an unreadable transcript is reported' "$out" 'could not be read'
+assert_says 'an unreadable transcript starts a new chat' "$out" 'history 0 of'
+if [ -f "$WORK_DIR/corrupt/history.json.corrupt" ]; then
+    pass 'the unreadable transcript is kept for inspection'
+else
+    fail 'the unreadable transcript is kept for inspection'
+fi
+
+# Valid JSON that is not a conversation would otherwise fail inside a request,
+# where the error is opaque.
+mkdir -p "$WORK_DIR/wrongshape"
+printf '[{"foo": 1}]' >"$WORK_DIR/wrongshape/history.json"
+out=$(session wrongshape '/about' '/quit')
+assert_says 'a wrongly shaped transcript is rejected' "$out" 'could not be read'
+assert_eq 'a wrongly shaped transcript is replaced' \
+    "$(hist wrongshape '.[0].role')" 'system'
+
+# Replay is capped so a long chat cannot push the prompt off the bottom.
+session cap 'one' 'two' 'three' 'four' '/quit' >/dev/null
+out=$(DPAD_REPLAY_MESSAGES=2 session cap '/quit')
+assert_says 'replay reports the cap' "$out" 'showing last 2'
+refute_says 'replay omits older turns' "$out" 'You said: one'
+assert_says 'replay shows the most recent turn' "$out" 'You said: four'
 
 # -----------------------------------------------------------------------------
 # Encoding

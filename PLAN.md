@@ -455,8 +455,13 @@ The keyboard is validated on hardware; everything else is validated in the conta
 
 ## 13. Out of scope for v1
 
-Native SDL UI via `libkbinput`, conversation persistence across launches, multiple saved
-chats, image input, alternate providers, and any support for the non-WiFi original Mini.
+Native SDL UI via `libkbinput`, multiple saved chats, image input, alternate providers,
+and any support for the non-WiFi original Mini.
+
+Conversation persistence *was* on this list. The reasoning was that resuming a
+conversation whose start has scrolled away is more confusing than beginning a new one —
+which turned out to be an argument for replaying the recent turns on screen, not for
+throwing them away.
 
 ### The v2 cross-compile pipeline, for reference
 

@@ -6,18 +6,27 @@
 # jq has to read it on every request anyway, and because a growing string in
 # 128 MB of RAM is not worth the risk.
 #
-# History is per session: history_init truncates it at startup. Persistence
-# across launches is deliberately out of scope for v1 (see PLAN.md section 13) —
-# resuming a conversation you cannot see the start of is more confusing than
-# beginning a new one.
+# The transcript persists across launches: reopening the app resumes the
+# conversation, and chat.sh replays the most recent turns so the context is
+# visible rather than merely implied.
+#
+# That makes clearing destructive in a way it was not before, so every reset
+# leaves the outgoing transcript in history.json.prev. Nothing reads it back,
+# but it means a mistyped /c has not thrown away an afternoon.
 
-# The jq programs below use $role, $content and $limit, which are jq variables
-# bound by --arg and --argjson. Single quotes are required: letting the shell
-# expand them first is exactly the interpolation bug this module exists to
-# avoid.
-# shellcheck disable=SC2016
+# SC2016: the jq programs below use $role, $content and $limit, which are jq
+# variables bound by --arg and --argjson. Single quotes are required — letting
+# the shell expand them first is exactly the interpolation bug this module
+# exists to avoid.
+#
+# SC2034: HISTORY_RESUMED and HISTORY_RECOVERED are this module's interface,
+# read by chat.sh after sourcing. Static analysis works one file at a time and
+# cannot see those uses.
+# shellcheck disable=SC2016,SC2034
 
 HISTORY_FILE=''
+HISTORY_RESUMED=0
+HISTORY_RECOVERED=0
 
 # -----------------------------------------------------------------------------
 # Lifecycle
@@ -26,12 +35,54 @@ HISTORY_FILE=''
 # history_init <data-dir> <system-prompt>
 history_init() {
     HISTORY_FILE="$1/history.json"
+    HISTORY_RESUMED=0
+    HISTORY_RECOVERED=0
+
     mkdir -p "$1" || return 1
+
+    if _history_is_valid; then
+        # The system prompt lives in settings, not in the transcript, so it is
+        # refreshed on load. Otherwise editing it would have no effect until the
+        # user happened to start a new conversation.
+        _history_set_system "$2" || return 1
+        HISTORY_RESUMED=1
+        return 0
+    fi
+
+    if [ -f "$HISTORY_FILE" ]; then
+        # A half-written file survives a battery pull. Keep it for inspection
+        # rather than deleting evidence, but do not try to use it.
+        log_warn 'the stored transcript could not be read; starting fresh'
+        mv -f "$HISTORY_FILE" "$HISTORY_FILE.corrupt" 2>/dev/null || :
+        HISTORY_RECOVERED=1
+    fi
+
     history_reset "$2"
 }
 
-# Starts a fresh transcript containing only the system prompt.
+# Shape check rather than a bare parse: a file that is valid JSON but not a
+# conversation would fail later, inside a request, where the error is opaque.
+_history_is_valid() {
+    [ -s "$HISTORY_FILE" ] || return 1
+    jq -e 'type == "array"
+           and length >= 1
+           and .[0].role == "system"
+           and all(.[]; (.role | type) == "string" and (.content | type) == "string")' \
+        "$HISTORY_FILE" >/dev/null 2>&1
+}
+
+_history_set_system() {
+    _history_write --arg content "$1" '.[0] = { role: "system", content: $content }'
+}
+
+# Starts a fresh transcript containing only the system prompt. The outgoing one
+# is kept alongside, because clearing is now the only way to lose a conversation
+# that would otherwise have survived a restart.
 history_reset() {
+    if [ -s "$HISTORY_FILE" ]; then
+        cp -f "$HISTORY_FILE" "$HISTORY_FILE.prev" 2>/dev/null || :
+    fi
+
     jq -n --arg content "$1" '[{ role: "system", content: $content }]' \
         >"$HISTORY_FILE" || return 1
 }
@@ -91,4 +142,22 @@ history_count() {
 
 history_is_empty() {
     [ "$(history_count)" -eq 0 ]
+}
+
+# history_role <index> / history_content <index>
+#
+# Indices are into the whole array, so 0 is the system prompt. Used by the
+# replay, which walks the tail of the transcript one message at a time; jq
+# cannot emit role and content as one line safely, because a reply may contain
+# any delimiter that might be chosen.
+history_role() {
+    jq -r --argjson i "$1" '.[$i].role // empty' "$HISTORY_FILE" 2>/dev/null
+}
+
+history_content() {
+    jq -r --argjson i "$1" '.[$i].content // empty' "$HISTORY_FILE" 2>/dev/null
+}
+
+history_length() {
+    jq 'length' "$HISTORY_FILE" 2>/dev/null || printf '1'
 }

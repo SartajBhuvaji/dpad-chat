@@ -64,6 +64,7 @@ model = gpt-4o-mini
 max_tokens = 512
 timeout = 60
 history_messages = 10
+replay_messages = 4
 stream = true
 ```
 
@@ -74,7 +75,11 @@ occasionally an awkward line break.
 
 `history_messages` caps how much of the conversation is resent each turn — ten messages
 is five exchanges. Raising it buys longer memory at the cost of a larger request every
-turn; the conversation is not persisted across launches.
+turn.
+
+`replay_messages` is how much of a resumed chat is redrawn on screen at startup. The
+default of two exchanges fits the panel; the full retained history would push the prompt
+off the bottom before you had typed anything.
 
 `make install-key` writes this for you. Until M3 adds on-device entry, the alternative is
 to edit the file on the card by hand. Either way it is parsed against a whitelist of known
@@ -108,10 +113,16 @@ All of these come from `st` itself.
 | Command | Effect |
 | --- | --- |
 | `/help` | list commands |
-| `/new` | start a new conversation |
-| `/clear` | clear the screen |
+| `/clear`, `/c` | start a new chat |
 | `/about` | version, width, model, TLS state, history size |
 | `/quit` | exit |
+
+Chats are kept when you close the app. Reopening resumes where you left off and replays
+the most recent turns, so the context the model still has is the context you can see.
+
+`/clear` is therefore destructive — it is the only way to lose a chat. It reports how many
+messages went, and leaves the outgoing transcript in `data/history.json.prev`. Nothing
+reads that back; it exists so a mistyped `/c` has not thrown away an afternoon.
 
 ## Development
 

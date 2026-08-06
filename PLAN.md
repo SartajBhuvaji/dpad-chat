@@ -330,7 +330,7 @@ The REPL never dies on a failed request — errors return to the prompt.
 | **M1** | Client, settings, mock server | Done. Single-turn requests; every failure path tested |
 | **M2** | Interactive REPL + history + trimming | Multi-turn conversation with context holds up |
 | **M3** | First-run key entry, `settings.cfg`, slash commands | Fresh install is usable with no file editing |
-| **M4** | Robustness pass (§8) + clock sync + `--cacert` | Every row of the error table verified by hand |
+| **M4** | Robustness pass (§8) + clock sync + `--cacert` | Done. Verified TLS with no fallback, route and clock preflight |
 | **M5** | Streaming replies | Tokens appear progressively (see below) |
 
 Streaming lands last because it's the riskiest piece. Approach — one `jq` process for the

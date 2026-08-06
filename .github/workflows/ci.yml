@@ -27,6 +27,9 @@ jobs:
       - name: API tests
         run: tests/api.sh
 
+      - name: Preflight and TLS tests
+        run: tests/net.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

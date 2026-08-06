@@ -6,9 +6,9 @@ Runs inside Onion's bundled `st` terminal, so the on-screen keyboard comes for f
 press **X** to bring it up, type with the D-pad, **Start** to send, **X** again to hide it
 and read the reply.
 
-> **Status: milestone M1.** The app installs, appears in the Apps menu, and answers
-> single-turn questions against the chat completions API. Conversation history arrives in
-> M2 and on-device key entry in M3. See [PLAN.md](PLAN.md) for the full breakdown.
+> **Status: milestone M4.** The app installs, appears in the Apps menu, and answers
+> single-turn questions over verified TLS. Conversation history arrives in M2, on-device
+> key entry in M3, streaming in M5. See [PLAN.md](PLAN.md) for the full breakdown.
 
 ## Requirements
 
@@ -91,6 +91,7 @@ make check         # lint + both test suites
 make sim           # run locally, pinned to the device's 40-column terminal
 make test-docker   # same suite under Alpine's busybox ash
 make mock          # run the mock API on :8080 to poke at by hand
+make cacert        # refresh the bundled CA certificates
 ```
 
 `tests/api.sh` drives the client against `tools/mockapi.py`, a scriptable stand-in for
@@ -139,9 +140,9 @@ app/            what gets copied to /mnt/SDCARD/App/DPadChat/
   launch.sh       entry point; starts st with chat.sh inside it
   chat.sh         the REPL
   lib/            shared helpers: paths, logging, rendering, settings, client
-  res/            icon
-tests/          smoke tests and API tests
-tools/          lint, simulate, install, mock server, icon generator
+  res/            icon and CA bundle
+tests/          smoke, API, and preflight tests
+tools/          lint, simulate, install, mock server, icon and CA fetchers
 ```
 
 ## Security
@@ -149,8 +150,17 @@ tools/          lint, simulate, install, mock server, icon generator
 The API key is stored in plain text under `app/data/`, which is git-ignored.
 FAT32 carries no permission bits, so anyone with physical access to the SD card can read
 it — use a key with a spending limit set. Unlike Onion's own scripts, which call
-`curl -k`, this app will ship a CA bundle and verify TLS (M4), because every request
+`curl -k`, this app ships its own CA bundle and verifies TLS, because every request
 carries that key.
+
+**There is no insecure fallback.** If the bundle is missing, the request fails rather
+than downgrading — the app will not send your key over a connection nobody verified.
+`/about` reports whether TLS is verified and how many trust anchors are loaded.
+
+The bundle is committed rather than downloaded at install time: the device may have no
+working network on first run, and a trust store fetched over an unverified connection
+would defeat the point. Refresh it with `make cacert`, which records a checksum that CI
+verifies.
 
 The key is never written to the log, never printed in full on screen — `/about` shows it
 redacted — and reaches curl through a mode-600 config file rather than the command line,

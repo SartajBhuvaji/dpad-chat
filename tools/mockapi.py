@@ -31,6 +31,20 @@ _call_counts: dict[str, int] = {}
 
 MAX_BODY_BYTES = 1 << 20
 
+# Scenarios that have something to stream. Everything else is an error, which
+# the real API also returns as a plain body rather than as events.
+STREAMABLE = {"ok", "long", "multiline", "stream_cut", "echo_payload"}
+
+# Small enough to keep the suite quick, large enough that a client which
+# buffered the whole response would be visibly different from one that does not.
+STREAM_DELAY = 0.02
+
+LONG_REPLY = (
+    "The SigmaStar SSD202D is the system-on-chip inside the Miyoo Mini and "
+    "Mini Plus, pairing two ARM Cortex-A7 cores at 1.2 GHz with 128 MB of "
+    "on-package DDR3 memory."
+)
+
 
 def _next_count(scenario: str) -> int:
     with _state_lock:
@@ -113,19 +127,19 @@ class Handler(BaseHTTPRequestHandler):
         if prompt.startswith("scenario:"):
             scenario = prompt.split(":", 1)[1].strip() or "ok"
 
+        # A streaming request gets server-sent events. Errors stay plain JSON,
+        # exactly as the real API behaves: the failure is known before the
+        # stream starts, so there is nothing to stream.
+        if payload.get("stream") and scenario in STREAMABLE:
+            self._stream(scenario, prompt, payload)
+            return
+
         if scenario == "ok":
             self._send_json(200, _completion(f"You said: {prompt}"))
 
         elif scenario == "long":
             # Exercises wrapping: far wider than the device's terminal.
-            self._send_json(
-                200,
-                _completion(
-                    "The SigmaStar SSD202D is the system-on-chip inside the "
-                    "Miyoo Mini and Mini Plus, pairing two ARM Cortex-A7 cores "
-                    "at 1.2 GHz with 128 MB of on-package DDR3 memory."
-                ),
-            )
+            self._send_json(200, _completion(LONG_REPLY))
 
         elif scenario == "multiline":
             self._send_json(200, _completion("first line\nsecond line\nthird line"))
@@ -171,6 +185,49 @@ class Handler(BaseHTTPRequestHandler):
 
         else:
             self._send_json(400, _error(f"Unknown scenario '{scenario}'", "invalid_request_error"))
+
+    def _stream(self, scenario: str, prompt: str, payload: dict) -> None:
+        if scenario == "stream_cut":
+            # Half a reply, then the connection drops: the client has already
+            # printed tokens it cannot retry.
+            chunks = ["this reply stops ", "half"]
+            cut = True
+        elif scenario == "long":
+            chunks = LONG_REPLY.split(" ")
+            chunks = [c + " " for c in chunks]
+            cut = False
+        elif scenario == "multiline":
+            chunks = ["first line\n", "second line\n", "third line"]
+            cut = False
+        elif scenario == "echo_payload":
+            # Split into fixed-size pieces so the client has to reassemble it,
+            # which is also what proves nothing is dropped between events.
+            body = json.dumps(payload, sort_keys=True)
+            chunks = [body[i : i + 24] for i in range(0, len(body), 24)]
+            cut = False
+        else:
+            chunks = [f"You said: {prompt}"]
+            cut = False
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        for chunk in chunks:
+            event = {
+                "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}]
+            }
+            self.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
+            self.wfile.flush()
+            time.sleep(STREAM_DELAY)
+
+        if cut:
+            return
+
+        self.wfile.write(b"data: [DONE]\n\n")
+        self.wfile.flush()
 
     def _send_json(self, status: int, body: dict) -> None:
         self._send_raw(status, json.dumps(body).encode())

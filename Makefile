@@ -43,6 +43,7 @@ test:
 	@tests/history.sh
 	@tests/release.sh
 	@tests/install.sh
+	@tests/stream.sh
 
 sim:
 	@tools/simulate.sh

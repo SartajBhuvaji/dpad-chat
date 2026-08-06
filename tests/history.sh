@@ -13,6 +13,10 @@
 
 set -eu
 
+# Transcript mechanics are independent of transport, so the buffered path is
+# pinned for speed and determinism. tests/stream.sh asserts that a streamed
+# reply is recorded the same way.
+
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 COLS=200 # wide, so JSON echoed back is not wrapped mid-token
 
@@ -100,6 +104,7 @@ session() {
         DPAD_DATA_DIR="$WORK_DIR/$dir" \
         DPAD_API_KEY='fixture-value-not-a-secret' \
         DPAD_BASE_URL="$MOCK_URL" \
+        DPAD_STREAM=false \
         DPAD_HISTORY_MESSAGES="${LIMIT:-10}" \
         "$REPO_ROOT/app/chat.sh" 2>&1
 }

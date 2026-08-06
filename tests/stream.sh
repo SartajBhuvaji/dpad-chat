@@ -1,0 +1,221 @@
+#!/bin/sh
+# Streaming tests.
+#
+# The point of streaming is that tokens reach the screen before the response is
+# complete, so the interesting assertion is about timing, not just content: a
+# client that buffered the whole reply and printed it at the end would pass
+# every content check here.
+
+set -eu
+
+REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
+COLS=200
+
+TESTS_RUN=0
+TESTS_FAILED=0
+
+WORK_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t dpad)
+MOCK_PID=''
+
+cleanup() {
+    [ -z "$MOCK_PID" ] || kill "$MOCK_PID" 2>/dev/null || :
+    rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT INT TERM
+
+start_mock() {
+    python3 "$REPO_ROOT/tools/mockapi.py" \
+        --port 0 --port-file "$WORK_DIR/port" >"$WORK_DIR/mock.log" 2>&1 &
+    MOCK_PID=$!
+    waited=0
+    while [ ! -s "$WORK_DIR/port" ]; do
+        [ "$waited" -lt 50 ] || {
+            printf 'mock did not start\n' >&2
+            exit 1
+        }
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    MOCK_URL="http://127.0.0.1:$(cat "$WORK_DIR/port")/v1"
+}
+
+pass() {
+    TESTS_RUN=$((TESTS_RUN + 1))
+    printf '  ok    %s\n' "$1"
+}
+
+fail() {
+    TESTS_RUN=$((TESTS_RUN + 1))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    printf '  FAIL  %s\n' "$1"
+    [ -z "${2:-}" ] || printf '        %s\n' "$2"
+}
+
+flatten() {
+    printf '%s' "$1" | tr '\n' ' ' | tr -s ' '
+}
+
+assert_says() {
+    case "$(flatten "$2")" in
+        *"$3"*) pass "$1" ;;
+        *) fail "$1" "expected to find: $3" ;;
+    esac
+}
+
+refute_says() {
+    case "$(flatten "$2")" in
+        *"$3"*) fail "$1" "did not expect: $3" ;;
+        *) pass "$1" ;;
+    esac
+}
+
+assert_eq() {
+    if [ "$2" = "$3" ]; then
+        pass "$1"
+    else
+        fail "$1" "expected '$3', got '$2'"
+    fi
+}
+
+hist() {
+    jq -r "$2" "$WORK_DIR/$1/history.json" 2>/dev/null || printf 'ERROR'
+}
+
+session() {
+    dir="$1"
+    shift
+    for line in "$@"; do
+        printf '%s\n' "$line"
+    done | env \
+        COLUMNS="$COLS" NO_COLOR=1 \
+        DPAD_DATA_DIR="$WORK_DIR/$dir" \
+        DPAD_API_KEY='fixture-value-not-a-secret' \
+        DPAD_BASE_URL="$MOCK_URL" \
+        DPAD_STREAM="${STREAM:-true}" \
+        "$REPO_ROOT/app/chat.sh" 2>&1
+}
+
+# -----------------------------------------------------------------------------
+
+printf 'Running streaming tests\n'
+start_mock
+
+# -----------------------------------------------------------------------------
+# Content
+# -----------------------------------------------------------------------------
+
+out=$(session basic 'hello' '/quit')
+assert_says 'a streamed reply reaches the screen' "$out" 'You said: hello'
+assert_eq 'a streamed reply is recorded' "$(hist basic '.[-1].role')" 'assistant'
+assert_eq 'the transcript holds the whole reply' \
+    "$(hist basic '.[-1].content')" 'You said: hello'
+
+out=$(session chunks 'scenario:long' '/quit')
+assert_says 'a reply split across many events is reassembled' \
+    "$out" 'SigmaStar SSD202D is the system-on-chip'
+assert_says 'the tail of a long reply survives' "$out" 'on-package DDR3 memory'
+
+out=$(session lines 'scenario:multiline' '/quit')
+assert_says 'newlines inside a stream are kept' "$out" 'first line'
+assert_says 'the last line of a stream is kept' "$out" 'third line'
+
+# The reply must be sent back as context on the next turn, exactly as the
+# buffered path does. The mock echoes the request body, so the second turn shows
+# what the first one left behind.
+#
+# Asserting on 'You said: hello' would not prove anything here: that text is
+# already on screen from the first turn's own reply.
+out=$(session ctx 'hello' 'scenario:echo_payload' '/quit')
+assert_says 'a streamed request asks for a stream' "$out" '"stream": true'
+assert_says 'a streamed reply is sent back as context' "$out" '"role": "assistant"'
+assert_eq 'both streamed turns are recorded' "$(hist ctx 'length')" '5'
+
+# -----------------------------------------------------------------------------
+# It actually streams
+# -----------------------------------------------------------------------------
+
+# The mock delays between events, so a reply of N chunks takes at least N * the
+# delay to finish. If the first token appeared only at the end, the gap between
+# the first byte on screen and the last would be near zero. Measuring that gap
+# is the only way to tell streaming from buffering.
+FIFO="$WORK_DIR/timing"
+: >"$FIFO"
+
+start=$(date +%s%N 2>/dev/null || printf '0')
+if [ "$start" != '0' ]; then
+    printf 'scenario:long\n/quit\n' | env \
+        COLUMNS="$COLS" NO_COLOR=1 \
+        DPAD_DATA_DIR="$WORK_DIR/timing_d" \
+        DPAD_API_KEY='fixture-value-not-a-secret' \
+        DPAD_BASE_URL="$MOCK_URL" \
+        DPAD_STREAM=true \
+        "$REPO_ROOT/app/chat.sh" 2>&1 |
+        while IFS= read -r _; do
+            printf '%s\n' "$(date +%s%N)" >>"$FIFO"
+        done
+
+    first=$(head -n 1 "$FIFO" 2>/dev/null || printf '0')
+    last=$(tail -n 1 "$FIFO" 2>/dev/null || printf '0')
+
+    if [ "$first" != '0' ] && [ "$last" != '0' ]; then
+        spread_ms=$(((last - first) / 1000000))
+        # 30 chunks at 20 ms is roughly 600 ms of stream. Anything above 150 ms
+        # of spread means output was arriving while the response was still open.
+        if [ "$spread_ms" -ge 150 ]; then
+            pass "output arrives progressively (${spread_ms}ms spread)"
+        else
+            fail 'output arrives progressively' \
+                "only ${spread_ms}ms between first and last line; looks buffered"
+        fi
+    else
+        fail 'output arrives progressively' 'no timing samples captured'
+    fi
+else
+    pass 'output arrives progressively (skipped: no nanosecond clock)'
+fi
+
+# -----------------------------------------------------------------------------
+# Failures
+# -----------------------------------------------------------------------------
+
+# An error is a plain JSON body, not events. It must be reported rather than
+# printed as though it were the reply.
+out=$(session unauth 'scenario:unauthorized' '/quit')
+assert_says 'a 401 during streaming is reported' "$out" 'Invalid API key'
+refute_says 'the error body is not printed as a reply' "$out" '"error"'
+assert_eq 'a failed stream leaves the transcript clean' "$(hist unauth 'length')" '1'
+
+out=$(session servererr 'scenario:server_error' '/quit')
+assert_says 'a 500 during streaming is reported' "$out" 'Server error 500'
+
+# A connection that drops mid-reply has already put text on screen, so the text
+# is kept rather than discarded.
+out=$(session cut 'scenario:stream_cut' '/quit')
+assert_says 'a truncated stream keeps what arrived' "$out" 'this reply stops'
+
+out=$(printf 'hello\n/quit\n' | env \
+    COLUMNS="$COLS" NO_COLOR=1 DPAD_DATA_DIR="$WORK_DIR/nonet" \
+    DPAD_API_KEY='fixture-value-not-a-secret' \
+    DPAD_BASE_URL='http://127.0.0.1:1/v1' DPAD_STREAM=true \
+    "$REPO_ROOT/app/chat.sh" 2>&1)
+assert_says 'a refused connection is explained while streaming' "$out" 'Check WiFi'
+
+# -----------------------------------------------------------------------------
+# The setting
+# -----------------------------------------------------------------------------
+
+out=$(STREAM=false session buffered 'hello' '/quit')
+assert_says 'streaming can be turned off' "$out" 'You said: hello'
+assert_eq 'the buffered path still records replies' \
+    "$(hist buffered '.[-1].content')" 'You said: hello'
+
+out=$(session about '/about' '/quit')
+assert_says '/about reports the streaming state' "$out" 'stream true'
+
+out=$(STREAM=nonsense session bogus '/about' '/quit')
+assert_says 'an invalid stream setting falls back to true' "$out" 'stream true'
+
+# -----------------------------------------------------------------------------
+
+printf '\n%s test(s), %s failure(s)\n' "$TESTS_RUN" "$TESTS_FAILED"
+[ "$TESTS_FAILED" -eq 0 ]

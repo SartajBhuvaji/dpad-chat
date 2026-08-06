@@ -35,6 +35,11 @@ config_defaults() {
     # "and how much RAM does it have?" to resolve, without growing the request
     # until every reply costs more than the last.
     CFG_HISTORY_MESSAGES='10'
+
+    # Replies arrive token by token. On a 1.2 GHz CPU over WiFi the buffered
+    # path is a five to ten second freeze followed by a wall of text, and the
+    # device offers no other sign that it is working.
+    CFG_STREAM='true'
 }
 
 # -----------------------------------------------------------------------------
@@ -62,6 +67,7 @@ config_load() {
     [ -z "${DPAD_MODEL:-}" ] || CFG_MODEL="$DPAD_MODEL"
     [ -z "${DPAD_TIMEOUT:-}" ] || CFG_TIMEOUT="$DPAD_TIMEOUT"
     [ -z "${DPAD_HISTORY_MESSAGES:-}" ] || CFG_HISTORY_MESSAGES="$DPAD_HISTORY_MESSAGES"
+    [ -z "${DPAD_STREAM:-}" ] || CFG_STREAM="$DPAD_STREAM"
 
     _config_validate
 }
@@ -97,6 +103,7 @@ _config_read_file() {
             connect_timeout) CFG_CONNECT_TIMEOUT="$value" ;;
             timeout) CFG_TIMEOUT="$value" ;;
             history_messages) CFG_HISTORY_MESSAGES="$value" ;;
+            stream) CFG_STREAM="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"
@@ -115,6 +122,14 @@ _config_validate() {
         *)
             log_warn "base_url must start with http:// or https://, got '$CFG_BASE_URL'"
             CFG_BASE_URL='https://api.openai.com/v1'
+            ;;
+    esac
+
+    case "$CFG_STREAM" in
+        true | false) ;;
+        *)
+            log_warn "stream must be true or false, got '$CFG_STREAM'; using true"
+            CFG_STREAM='true'
             ;;
     esac
 

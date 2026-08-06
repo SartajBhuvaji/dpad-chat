@@ -4,8 +4,7 @@
 # Runs inside Onion's bundled `st` terminal, which supplies the on-screen
 # keyboard. See PLAN.md for the full design and milestone breakdown.
 #
-# Milestone M2: multi-turn conversation. Interactive key entry arrives in M3,
-# streaming replies in M5.
+# Milestone M5: replies stream in as they are generated.
 
 # Resolve sourced files relative to this script. Must precede the first command
 # to apply file-wide; attached to a single command it only covers that line.
@@ -65,6 +64,7 @@ cmd_about() {
     ui_info "model    $CFG_MODEL"
     ui_info "key      $(config_redact_key)"
     ui_info "history  $(history_count) of $CFG_HISTORY_MESSAGES msgs"
+    ui_info "stream   $CFG_STREAM"
     ui_info "tls      $(_about_tls)"
     ui_info "net      $(_about_net)"
     ui_info "data     $DATA_DIR"
@@ -156,20 +156,38 @@ chat_respond() {
 
     # api_send must run in this shell, not a command substitution: its results
     # come back in API_REPLY and API_ERROR, which a subshell would discard.
-    if api_send "$(history_path)"; then
-        ui_clear_line
-        ui_assistant "$API_REPLY"
-        history_append assistant "$API_REPLY"
-        history_trim "$CFG_HISTORY_MESSAGES"
+    if [ "$CFG_STREAM" = 'true' ]; then
+        ui_stream_begin
+        if api_send_stream "$(history_path)"; then
+            ui_stream_end
+            _chat_remember "$API_REPLY"
+        else
+            ui_stream_end
+            _chat_failed
+        fi
     else
-        ui_clear_line
-        ui_error "$API_ERROR"
-
-        # Roll back the unanswered question. Leaving it would send it again as
-        # context next turn, so the model would see a question it never
-        # answered and the user would watch it steer later replies.
-        history_drop_last
+        if api_send "$(history_path)"; then
+            ui_clear_line
+            ui_assistant "$API_REPLY"
+            _chat_remember "$API_REPLY"
+        else
+            ui_clear_line
+            _chat_failed
+        fi
     fi
+}
+
+_chat_remember() {
+    history_append assistant "$1"
+    history_trim "$CFG_HISTORY_MESSAGES"
+}
+
+# Roll back the unanswered question. Leaving it would send it again as context
+# next turn, so the model would see a question it never answered and the user
+# would watch it steer later replies.
+_chat_failed() {
+    ui_error "$API_ERROR"
+    history_drop_last
 }
 
 repl() {

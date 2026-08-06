@@ -76,14 +76,14 @@ fi
 
 printf '\nChecking JSON\n'
 if command -v python3 >/dev/null 2>&1; then
-    for json in app/config.json; do
-        if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$json"; then
-            printf '  ok    %s\n' "$json"
-        else
-            printf '  FAIL  %s\n' "$json"
-            status=1
-        fi
-    done
+    # A malformed manifest makes the app vanish from the Apps menu with no
+    # error shown on the device, so this is worth catching here.
+    if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' app/config.json; then
+        printf '  ok    app/config.json\n'
+    else
+        printf '  FAIL  app/config.json\n'
+        status=1
+    fi
 else
     printf '  skipped: python3 not installed\n'
 fi

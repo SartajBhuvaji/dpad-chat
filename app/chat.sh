@@ -7,12 +7,15 @@
 # Milestone M0: package scaffold, REPL, and command dispatch. Model responses
 # are stubbed; lib/api.sh replaces chat_respond() in M1.
 
+# Resolve sourced files relative to this script. Must precede the first command
+# to apply file-wide; attached to a single command it only covers that line.
+# shellcheck source-path=SCRIPTDIR
+
 set -eu
 
 APP_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P)
 readonly APP_DIR
 
-# shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib/common.sh
 . "$APP_DIR/lib/common.sh"
 # shellcheck source=lib/ui.sh

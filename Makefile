@@ -8,6 +8,8 @@ SHELL := /bin/sh
 IMAGE := dpad-chat-test
 CARD  ?=
 HOST  ?=
+# Onion's documented login. USER is a shell builtin in make, so it is renamed.
+USER_ ?= onion
 
 .PHONY: help check lint test mock sim icon docker-build test-docker shell-docker install install-ssh clean
 
@@ -22,7 +24,7 @@ help:
 	@echo '  test-docker   run check inside the Alpine harness'
 	@echo '  shell-docker  interactive busybox ash in the harness'
 	@echo '  install       copy to an SD card    (make install CARD=/media/me/MIYOO)'
-	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42)'
+	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42 [USER=onion])'
 	@echo '  clean         remove local run state'
 
 check: lint test
@@ -57,8 +59,8 @@ install:
 	@tools/install.sh '$(CARD)'
 
 install-ssh:
-	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip>' >&2; exit 1; }
-	@tools/install.sh --ssh '$(HOST)'
+	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)'
 
 clean:
 	@rm -rf app/data

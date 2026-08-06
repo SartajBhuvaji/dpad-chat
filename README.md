@@ -31,6 +31,10 @@ reseating the card:
 make install-ssh HOST=192.168.1.42
 ```
 
+Enable it first under **Tweaks → Network → SSH**. The login is the **device's**, not your
+machine's and not WiFi: Onion's default is `onion` / `onion`. Override with
+`USER=` if you have changed it.
+
 Then open **Apps → D-Pad Chat**.
 
 ## Configuration
@@ -121,7 +125,7 @@ Enable SSH in Onion's Tweaks, then run the app directly over the network:
 
 ```sh
 make install-ssh HOST=<device-ip>
-ssh root@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
+ssh onion@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
 ```
 
 This exercises everything except the `st` keyboard, and iterates in seconds. Launch from

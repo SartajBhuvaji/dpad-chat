@@ -4,8 +4,8 @@
 # Runs inside Onion's bundled `st` terminal, which supplies the on-screen
 # keyboard. See PLAN.md for the full design and milestone breakdown.
 #
-# Milestone M0: package scaffold, REPL, and command dispatch. Model responses
-# are stubbed; lib/api.sh replaces chat_respond() in M1.
+# Milestone M1: single-turn requests against the chat completions API.
+# Conversation history arrives in M2, interactive key entry in M3.
 
 # Resolve sourced files relative to this script. Must precede the first command
 # to apply file-wide; attached to a single command it only covers that line.
@@ -20,6 +20,10 @@ readonly APP_DIR
 . "$APP_DIR/lib/common.sh"
 # shellcheck source=lib/ui.sh
 . "$APP_DIR/lib/ui.sh"
+# shellcheck source=lib/config.sh
+. "$APP_DIR/lib/config.sh"
+# shellcheck source=lib/api.sh
+. "$APP_DIR/lib/api.sh"
 
 DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
 
@@ -30,11 +34,18 @@ DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
 cmd_help() {
     ui_info '/help   this list'
     ui_info '/clear  clear the screen'
-    ui_info '/about  version and paths'
+    ui_info '/about  version and settings'
     ui_info '/quit   exit'
     printf '\n'
     ui_info 'X toggles the keyboard. Hide it to read'
     ui_info 'long replies.'
+
+    if ! config_has_key; then
+        printf '\n'
+        ui_warn 'No API key set. Add this line to'
+        ui_warn "$DATA_DIR/settings.cfg"
+        ui_warn 'api_key=<your key>'
+    fi
 }
 
 cmd_about() {
@@ -45,6 +56,8 @@ cmd_about() {
     else
         ui_info 'host     development'
     fi
+    ui_info "model    $CFG_MODEL"
+    ui_info "key      $(config_redact_key)"
     ui_info "data     $DATA_DIR"
 }
 
@@ -81,12 +94,21 @@ dispatch_command() {
 # Conversation
 # -----------------------------------------------------------------------------
 
-# M1 replaces this with a call into lib/api.sh. Keeping the seam explicit means
-# the REPL, rendering and command handling are all testable before any network
-# code exists, and before an API key is required to run the app at all.
+# A failed request is never fatal: the message is rendered and the REPL carries
+# on, because losing the session to a dropped WiFi packet would be worse than
+# any error it could report.
 chat_respond() {
-    log_info "prompt: $1"
-    ui_assistant "Not wired up yet - this is the M0 scaffold. You typed: $1"
+    ui_thinking
+
+    # api_send must run in this shell, not a command substitution: its results
+    # come back in API_REPLY and API_ERROR, which a subshell would discard.
+    if api_send "$1"; then
+        ui_clear_line
+        ui_assistant "$API_REPLY"
+    else
+        ui_clear_line
+        ui_error "$API_ERROR"
+    fi
 }
 
 repl() {
@@ -129,12 +151,21 @@ main() {
     trap on_exit EXIT
     trap 'RUNNING=0' INT TERM
 
-    require_cmd fold sed date
+    require_cmd fold sed date curl jq mktemp
+
+    config_load "$DATA_DIR"
 
     ui_init
     ui_clear
     ui_banner
     ui_hints
+
+    # Stay in the REPL without a key: /help then explains where to put one,
+    # which is more useful than exiting onto a menu with no explanation.
+    if ! config_has_key; then
+        printf '\n'
+        ui_warn 'No API key set - /help explains how.'
+    fi
 
     repl
 }

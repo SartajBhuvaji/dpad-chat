@@ -78,15 +78,19 @@ assert_contains 'unknown commands are reported' "$out" 'Unknown command: /nope'
 out=$(printf '/x\n/quit\n' | run_app)
 assert_contains 'short unknown commands are reported' "$out" 'Unknown command: /x'
 
+# No key is configured here, so plain text stops at the client without opening
+# a socket. tests/api.sh covers the request path against the mock server.
 out=$(printf 'hello there\n/quit\n' | run_app)
-assert_contains 'plain text reaches the responder' "$out" 'You typed: hello there'
+assert_contains 'plain text reaches the responder' "$out" 'No API key set'
+assert_contains 'the responder shows progress' "$out" 'thinking'
 
-out=$(printf '   spaced   \n/quit\n' | run_app)
-assert_contains 'input is trimmed' "$out" 'You typed: spaced'
-assert_not_contains 'trailing space is removed' "$out" 'You typed: spaced   '
+# Trimming is observable without a network: a padded command still dispatches.
+out=$(printf '   /about   \n/quit\n' | run_app)
+assert_contains 'padded commands are trimmed and dispatched' "$out" 'version'
+assert_not_contains 'a padded command is not treated as chat' "$out" 'Unknown command'
 
-out=$(printf '\n\n/quit\n' | run_app)
-assert_not_contains 'blank lines are ignored' "$out" 'You typed:'
+out=$(printf '\n   \n/quit\n' | run_app)
+assert_not_contains 'blank lines are ignored' "$out" 'thinking'
 
 # Exit status matters: Onion returns to the Apps menu on any exit, but a
 # non-zero code means a stuck process is more likely.

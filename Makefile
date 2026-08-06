@@ -9,13 +9,14 @@ IMAGE := dpad-chat-test
 CARD  ?=
 HOST  ?=
 
-.PHONY: help check lint test sim icon docker-build test-docker shell-docker install install-ssh clean
+.PHONY: help check lint test mock sim icon docker-build test-docker shell-docker install install-ssh clean
 
 help:
 	@echo 'Targets:'
 	@echo '  check         lint + smoke tests (default)'
 	@echo '  lint          POSIX syntax, shellcheck, JSON'
-	@echo '  test          smoke tests'
+	@echo '  test          smoke tests + API tests against the mock server'
+	@echo '  mock          run the mock API on :8080 for manual poking'
 	@echo '  sim           run the app locally at 40 columns'
 	@echo '  icon          regenerate app/res/icon.png'
 	@echo '  test-docker   run check inside the Alpine harness'
@@ -31,9 +32,13 @@ lint:
 
 test:
 	@tests/smoke.sh
+	@tests/api.sh
 
 sim:
 	@tools/simulate.sh
+
+mock:
+	@tools/mockapi.py --port 8080 --verbose
 
 icon:
 	@python3 tools/make_icon.py

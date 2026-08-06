@@ -1,0 +1,15 @@
+# Secret scanning configuration.
+#
+# The test suite has to pass something key-shaped to the client in order to
+# exercise the request path at all, and one test deliberately plants a canary
+# value to prove it never reaches the screen or the log. Those fixtures are not
+# credentials and never were.
+#
+# Real keys cannot land here by accident: app/data/ is git-ignored, and a test
+# asserts the key is absent from the log.
+
+version: 2
+
+secret:
+  ignored-paths:
+    - tests/api.sh

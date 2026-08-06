@@ -52,8 +52,9 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # Checkouts on a Windows filesystem silently drop the mode bit, which fails
     # only once CI or the device tries to run the file. Assert on the index
     # rather than the working tree, since the index is what gets pushed.
-    for entry in app/chat.sh app/launch.sh tests/smoke.sh tools/install.sh \
-        tools/lint.sh tools/simulate.sh tools/make_icon.py; do
+    for entry in app/chat.sh app/launch.sh tests/smoke.sh tests/api.sh \
+        tools/install.sh tools/lint.sh tools/simulate.sh tools/make_icon.py \
+        tools/mockapi.py; do
         mode=$(git ls-files -s -- "$entry" | cut -d' ' -f1)
         case "$mode" in
             100755)

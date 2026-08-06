@@ -1,5 +1,8 @@
 # Attribution
 
+Third-party work this project builds on. See [README.md](README.md) for the project
+itself, and [LICENSE](LICENSE) for its own terms.
+
 ## Launcher icon
 
 The sparkle in the app icon is derived from **"AI"** by [Icons8](https://icons8.com),

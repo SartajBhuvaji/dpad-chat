@@ -7,6 +7,11 @@ inside Onion's bundled `st` terminal (which supplies the on-screen keyboard for 
 scope — v1 will detect the absence of a network interface and show a clear message rather
 than pretend to work.
 
+> This is the design record: why things are built the way they are, and what was
+> deliberately left out. For using the app, see [README.md](README.md),
+> [GUIDE.md](GUIDE.md) for installing it, and [COMMANDS.md](COMMANDS.md) for the commands
+> and settings.
+
 ---
 
 ## 1. Why shell + `st`

@@ -1,273 +1,155 @@
+<div align="center">
+
 # D-Pad Chat
 
-A chat client for [Onion OS](https://github.com/OnionUI/Onion) on the Miyoo Mini+.
+**A ChatGPT client for the Miyoo Mini Plus, on [Onion OS][onion].**
 
-Runs inside Onion's bundled `st` terminal, so the on-screen keyboard comes for free:
-press **X** to bring it up, type with the D-pad, **Start** to send, **X** again to hide it
-and read the reply.
+Type with the D-pad. Replies stream in as they are generated.
 
-> **Status: v1 feature-complete.** The app installs, appears in the Apps menu, and holds
-> a multi-turn conversation over verified TLS, with replies streaming in as they are
-> generated. See [PLAN.md](PLAN.md) for the design and what was deliberately left out.
+[![CI](https://github.com/SartajBhuvaji/dpad-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/SartajBhuvaji/dpad-chat/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SartajBhuvaji/dpad-chat?color=slateblue)](https://github.com/SartajBhuvaji/dpad-chat/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[Install](GUIDE.md) · [Commands](COMMANDS.md) · [Design notes](PLAN.md) · [Releases][releases]
+
+</div>
+
+<!-- SCREENSHOTS — filenames are fixed; drop the images in docs/img/ and uncomment.
+
+<div align="center">
+<img src="docs/img/hero.jpg" alt="D-Pad Chat running on a Miyoo Mini Plus" width="640">
+</div>
+
+| Ask | Wait | Read |
+| --- | --- | --- |
+| ![Typing a question with the on-screen keyboard](docs/img/keyboard.png) | ![The waiting indicator counting seconds](docs/img/thinking.png) | ![A streamed reply on screen](docs/img/reply.png) |
+
+-->
+
+---
+
+## What it is
+
+A handheld with no keyboard, 128 MB of RAM and a 640×480 screen, running a chat client
+written entirely in POSIX shell.
+
+It runs inside `st`, the terminal Onion already ships, which means the on-screen keyboard
+comes for free: **X** raises it, the D-pad moves the cursor, **Start** sends, **X** hides
+it again so you can read. No cross-compiler, no new binaries on the card — the app calls
+the `curl`, `jq` and `ntpdate` that Onion already has.
+
+- **Streaming replies.** Tokens appear as they are generated, not after a ten-second
+  freeze — which on this hardware is the difference between working and hung.
+- **Conversations persist.** Close the app and reopen it; the chat resumes and the recent
+  turns are redrawn, so the context the model has is the context you can see.
+- **Verified TLS, with no fallback.** The app ships its own CA bundle and refuses to send
+  your key over a connection it could not verify.
+- **Updates itself.** `/update` checks GitHub, asks, and installs on the next launch.
+- **Pinned status bars.** Connection state at the top, controls at the bottom, both
+  staying put while the conversation scrolls between them.
+
+> **Status: v1 feature-complete.** [PLAN.md](PLAN.md) has the design, the milestone
+> history, and what was deliberately left out.
 
 ## Requirements
 
-- **Miyoo Mini Plus.** The original Miyoo Mini has no WiFi and is not supported.
+- A **Miyoo Mini Plus**. The original Mini has no WiFi and is not supported.
 - **Onion OS 4.x**, which provides `st`, `curl`, `jq` and `ntpdate`.
-- A WiFi connection configured in Onion's settings.
+- WiFi configured in Onion's settings, and an [OpenAI API key][keys].
 
 ## Install
 
-Download the zip from [Releases](https://github.com/SartajBhuvaji/dpad-chat/releases) and
-unpack it onto the root of the SD card, so the app lands in
-`/mnt/SDCARD/App/DPadChat/`.
+Download the zip from [Releases][releases] and unpack it onto the **root** of the SD card,
+so the app lands in `/mnt/SDCARD/App/DPadChat/`. Then open **Apps → D-Pad Chat**.
 
-To install from a checkout instead, copy `app/` to `/mnt/SDCARD/App/DPadChat/`, or use
-the installer:
+Over SSH instead, which is much faster if you expect to do it more than once:
 
 ```sh
-make install CARD=/media/you/MIYOO
+make install-key HOST=192.168.1.42     # copy the app, then prompt for the key
 ```
 
-### Over SSH
+Already installed? Type `/update` in the app.
 
-Usually the easiest route, and much faster than reseating the card. Enable SSH first
-under **Tweaks → Network → SSH**.
+**[Full installation guide →](GUIDE.md)** — every route, setting the key, upgrading,
+uninstalling, and what to do when one of them does not work.
 
-```sh
-make install-ssh HOST=192.168.1.42              # app only
-make install-key HOST=192.168.1.42              # app, then prompt for the API key
-```
+## Using it
 
-The login is the **device's**, not your machine's and not WiFi: Onion's default is
-`onion` / `onion`. Override with `USER=` if you have changed it. You are asked for the
-password once — the connection is multiplexed, so the copy and the key write share it.
+**[Commands and settings →](COMMANDS.md)** — the slash commands, the button map, the
+status bar, and every key you can put in `settings.cfg`.
 
-`install-key` prompts with the input hidden and sends the key over stdin, so it never
-appears in your shell history, in `ps`, or in the device's process list. Settings already
-on the device are preserved: only `api_key` is rewritten, so a model or timeout you chose
-there survives a reinstall.
-
-For scripted use, `tools/install.sh --ssh <host> --key-file <path>` reads the key from a
-file instead of prompting.
-
-Then open **Apps → D-Pad Chat**.
-
-## Configuration
-
-Settings live in `data/settings.cfg` next to the app, as `key=value` lines. Only
-`api_key` is required:
-
-```ini
-api_key = <paste your key here>
-model = gpt-4o-mini
-max_tokens = 512
-timeout = 60
-history_messages = 10
-replay_messages = 4
-stream = true
-```
-
-`stream = false` waits for the whole reply instead of showing it as it arrives. The
-buffered path wraps text on word boundaries; the streaming path lets the terminal wrap,
-which can split a word across lines. That is the trade: a five to ten second freeze, or
-occasionally an awkward line break.
-
-`history_messages` caps how much of the conversation is resent each turn — ten messages
-is five exchanges. Raising it buys longer memory at the cost of a larger request every
-turn.
-
-`replay_messages` is how much of a resumed chat is redrawn on screen at startup. The
-default of two exchanges fits the panel; the full retained history would push the prompt
-off the bottom before you had typed anything.
-
-`github_token` is optional and only touched by `/update`. This repository is public, so
-release metadata is served without any credential; set it only if you are running a fork
-whose repository is private, or if you hit GitHub's unauthenticated rate limit.
-
-`make install-key` writes this for you. Until M3 adds on-device entry, the alternative is
-to edit the file on the card by hand. Either way it is parsed against a whitelist of known
-keys rather than sourced, so nothing written in it is ever executed.
-
-FTP is available on Onion (`bftpd`, under Tweaks) but is a poor fit here: it sends the
-login *and* the key in cleartext over the network, which undoes the point of verifying
-TLS on every request. SSH is already set up and costs one password prompt.
-
-Every setting can be overridden by an environment variable (`DPAD_API_KEY`,
-`DPAD_MODEL`, `DPAD_BASE_URL`, `DPAD_TIMEOUT`), which is how the test suite points the
-app at a mock server.
-
-## Controls
-
-| Button | Action |
-| --- | --- |
-| **X** | show / hide the keyboard |
-| D-pad | move the key cursor |
-| **A** | press the selected key |
-| **B** | sticky-toggle a key (shift, ctrl) |
-| **L1 / R1** | shift / backspace |
-| **Y** | move the keyboard between top and bottom |
-| **Start** | send |
-| **Select** | quit |
-
-All of these come from `st` itself.
-
-## Commands
-
-| Command | Effect |
-| --- | --- |
-| `/help` | list commands |
-| `/clear`, `/c` | start a new chat |
-| `/about` | version, width, model, TLS state, history size |
-| `/update` | check GitHub for a new version, and offer to install it |
-| `/quit` | exit |
-
-Chats are kept when you close the app. Reopening resumes where you left off and replays
-the most recent turns, so the context the model still has is the context you can see.
-
-`/clear` is therefore destructive, and final — it is the only way to lose a chat, and no
-copy is kept anywhere. The screen goes blank and the conversation is gone, on disk as well
-as on screen.
-
-### Updating
-
-`/update` asks GitHub for the latest release and, if it is newer than what you are
-running, offers to install it. Nothing is downloaded until you answer, and nothing is
-installed until you relaunch:
-
-```
-New version available:
-  v0.6.1  ->  v0.7.0
-
-Download and install it? [y/N]
-```
-
-Answering yes unpacks the release into `data/update/` and stops there. The swap happens
-on the next launch, before the app starts. That ordering is not politeness — the shell
-reads a script incrementally from an open file descriptor, so overwriting `chat.sh` while
-it is running resumes the interpreter partway through different content.
-
-Your conversation and your settings live in `data/`, which the update never writes to.
-
-An archive is refused before it is unpacked if any path in it points outside the app, and
-refused after unpacking if a file the app needs is missing — replacing a working install
-with one that cannot start is not recoverable on a device whose only input is a D-pad.
-
-`/update` is manual. The app never phones home on its own.
-
-## Development
-
-No cross-compiler is needed: the app is POSIX shell calling binaries that already ship
-with Onion OS.
-
-```sh
-make check         # lint + both test suites
-make sim           # run locally, pinned to the device's 40-column terminal
-make test-docker   # same suite under Alpine's busybox ash
-make mock          # run the mock API on :8080 to poke at by hand
-make cacert        # refresh the bundled CA certificates
-make package       # build the release archive
-```
-
-`tests/api.sh` drives the client against `tools/mockapi.py`, a scriptable stand-in for
-the real endpoint. **No API key is needed to run the suite, and it costs nothing** — a
-live endpoint cannot be asked to return 429 on demand, and proving that word wrap works
-should not spend tokens. Scenarios are chosen by the prompt:
-
-```
-scenario:unauthorized
-```
-
-Available: `ok`, `long`, `multiline`, `unauthorized`, `rate_limit`, `rate_limit_always`,
-`server_error`, `malformed`, `empty`, `slow`, `echo_payload`.
-
-`make check` runs `dash -n` and `shellcheck -s sh` over every script. The device shell is
-busybox ash, so the code stays strict POSIX — no arrays, no `[[ ]]`, no `$'...'`.
-`make test-docker` is the stricter gate, because Alpine's busybox is the closest
-available stand-in for the device userland.
-
-The launcher icon is generated rather than hand-drawn, so it is reviewable as source:
-
-```sh
-make icon
-```
-
-CI runs the suite under both dash and busybox, and verifies the committed icon still
-matches its generator.
-
-### Testing on hardware
-
-Enable SSH in Onion's Tweaks, then run the app directly over the network:
-
-```sh
-make install-ssh HOST=<device-ip>
-ssh -t onion@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
-```
-
-This exercises everything except the `st` keyboard, and iterates in seconds. Launch from
-the Apps menu for the final check.
-
-## Layout
-
-```
-app/            what gets copied to /mnt/SDCARD/App/DPadChat/
-  config.json     Onion app manifest
-  launch.sh       entry point; starts st with chat.sh inside it
-  chat.sh         the REPL
-  apply-update.sh installs a staged update, run by launch.sh before anything else
-  lib/            shared helpers: paths, logging, rendering, settings, client
-  res/            icon and CA bundle
-tests/          smoke, API, preflight, history, screen and update tests
-tools/          lint, simulate, install, mock server, icon and CA fetchers
-```
+The short version: **X** toggles the keyboard, **Start** sends, `/help` lists the
+commands, and `/about` is the first screen to check when something is wrong.
 
 ## Security
 
-The API key is stored in plain text under `app/data/`, which is git-ignored.
-FAT32 carries no permission bits, so anyone with physical access to the SD card can read
-it — use a key with a spending limit set. Unlike Onion's own scripts, which call
-`curl -k`, this app ships its own CA bundle and verifies TLS, because every request
-carries that key.
+The API key sits in plain text on a FAT32 card, which carries no permission bits — anyone
+with the card can read it. That is the hardware, not the app. **Use a key with a spending
+limit set.**
 
-**There is no insecure fallback.** If the bundle is missing, the request fails rather
-than downgrading — the app will not send your key over a connection nobody verified.
-`/about` reports whether TLS is verified and how many trust anchors are loaded.
+Everything the app controls is held to a stricter line. Onion's own scripts call
+`curl -k`; this one ships a CA bundle and verifies every connection, because every request
+carries that key. **There is no insecure fallback** — a missing bundle fails the request
+rather than downgrading it. The key never reaches the log, never appears in full on screen,
+and reaches `curl` through a mode-600 config file rather than the command line where any
+other process could read it. `/update` downloads code, so it is held to the same rule
+again, and never sends your OpenAI key to GitHub.
 
-The bundle is committed rather than downloaded at install time: the device may have no
-working network on first run, and a trust store fetched over an unverified connection
-would defeat the point. Refresh it with `make cacert`, which records a checksum that CI
-verifies.
+All of it is covered by tests. The reasoning is in [PLAN.md §7 and §12](PLAN.md).
 
-The key is never written to the log, never printed in full on screen — `/about` shows it
-redacted — and reaches curl through a mode-600 config file rather than the command line,
-where any other process could read it. All three are covered by tests.
+## Development
 
-`/update` downloads code, so it is held to the same rule: verified against the bundled CA
-or not at all, `https` only, and `https` again after any redirect. It talks to
-GitHub and never sends your OpenAI key there. A `github_token` setting exists for forks
-whose repository is private; it travels the same mode-600 config file, and curl drops the
-header when a redirect crosses hosts, so it never reaches the CDN serving the file.
+No cross-compiler is needed — it is shell calling binaries the device already has.
+
+```sh
+make check         # lint + the full suite, no API key needed, costs nothing
+make sim           # run locally, pinned to the device's 40-column terminal
+make test-docker   # the same suite under Alpine's busybox ash
+```
+
+The suite drives the client against `tools/mockapi.py`, a scriptable stand-in for the API
+and for GitHub releases — a live endpoint cannot be asked to return 429 on demand, and
+proving that word wrap works should not spend tokens.
+
+The device shell is busybox ash, so the code stays strict POSIX: no arrays, no `[[ ]]`, no
+`$'...'`. `make check` runs `dash -n` and `shellcheck -s sh` over every script;
+`make test-docker` is the stricter gate, because Alpine's busybox is the closest available
+stand-in for the device userland. CI runs both.
+
+More in [GUIDE.md § Building from source](GUIDE.md#building-from-source).
+
+### Layout
+
+```
+app/              what gets copied to /mnt/SDCARD/App/DPadChat/
+  config.json       Onion app manifest
+  launch.sh         entry point; applies a staged update, then starts st
+  chat.sh           the REPL
+  apply-update.sh   installs a staged update, run by launch.sh before anything else
+  lib/              paths, logging, rendering, screen, settings, client, updater
+  res/              icon and CA bundle
+tests/            smoke, API, preflight, history, streaming, screen and update tests
+tools/            lint, simulate, install, mock server, packaging, icon and CA fetchers
+```
 
 ## Releases
 
-Every pull request carries exactly one label — `major`, `minor` or `patch` — and CI
-fails without it. On merge, the release workflow bumps `DPADCHAT_VERSION`, tags, and
-publishes two archives that unpack onto an SD card: a `.zip` for installing by hand from
-a desktop, and a `.tar.gz` for `/update`. Both hold the same files. The split is because
-busybox always has `tar` and `gzip`, while `unzip` is an optional applet that may not be
-on the device — and finding that out after the download is too late.
+Every pull request carries exactly one version label — `major`, `minor` or `patch` — and
+CI fails without it. On merge, the release workflow bumps the version, tags, and publishes
+two archives: a `.zip` for installing by hand, and a `.tar.gz` for `/update`. Both hold
+the same files; busybox always has `tar` and `gzip`, while `unzip` is an optional applet
+that may not be on the device.
 
-`app/lib/common.sh` is the single source of truth for the version; tags and releases are
+`app/lib/common.sh` is the single source of truth for the version. Tags and releases are
 derived from it, so a checkout at any commit reports the same version the app prints in
 `/about`.
 
-```sh
-make version    # what is this checkout
-make package    # build the archive locally
-```
-
 ## License
 
-MIT. See [LICENSE](LICENSE). Third-party credits are in
-[ATTRIBUTION.md](ATTRIBUTION.md) — the icon derives from Icons8 art, and the CA bundle
+MIT — see [LICENSE](LICENSE). Third-party credits are in
+[ATTRIBUTION.md](ATTRIBUTION.md): the icon derives from Icons8 art, and the CA bundle
 comes from the curl project.
+
+[onion]: https://github.com/OnionUI/Onion
+[releases]: https://github.com/SartajBhuvaji/dpad-chat/releases
+[keys]: https://platform.openai.com/api-keys

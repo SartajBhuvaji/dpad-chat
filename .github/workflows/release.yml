@@ -1,0 +1,131 @@
+name: Release
+
+# Runs once a pull request is merged. Reads the version label the pr-labels
+# workflow enforced, bumps app/lib/common.sh, tags, and publishes a release with
+# an archive that unpacks onto an SD card.
+#
+# Pushing to main from here does not start another run: commits made with
+# GITHUB_TOKEN do not trigger workflows, which is what keeps this from looping.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  # Two merges in quick succession would otherwise race on the same tag.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read the version label
+        id: bump
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -eu
+
+          kind=$(printf '%s' "$LABELS" |
+            jq -r '[.[] | select(. == "major" or . == "minor" or . == "patch")] | first // ""')
+
+          if [ -z "$kind" ]; then
+            echo "::error::Merged without a version label; nothing to release."
+            exit 1
+          fi
+
+          echo "kind=$kind" >>"$GITHUB_OUTPUT"
+          echo "version=$(tools/version.sh next "$kind")" >>"$GITHUB_OUTPUT"
+
+      - name: Guard against an existing tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -eu
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::v$VERSION already exists. The version file and tags disagree."
+            exit 1
+          fi
+
+      - name: Bump the version
+        env:
+          KIND: ${{ steps.bump.outputs.kind }}
+        run: tools/version.sh bump "$KIND"
+
+      # The version the app prints in /about is the one being released, so the
+      # suite runs against the bumped tree rather than the merged one.
+      - name: Verify
+        run: |
+          sudo apt-get update && sudo apt-get install -y dash shellcheck
+          tools/lint.sh
+          tests/smoke.sh
+          tests/api.sh
+          tests/net.sh
+          tests/history.sh
+          tests/release.sh
+
+      - name: Build the archive
+        run: python3 tools/package.py
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add app/lib/common.sh
+          git commit -m "Release v$VERSION"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin HEAD:main
+          git push origin "v$VERSION"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          KIND: ${{ steps.bump.outputs.kind }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -eu
+          cat >notes.md <<EOF
+          $PR_TITLE (#$PR_NUMBER)
+
+          ## Install
+
+          Unzip \`DPadChat-v$VERSION.zip\` onto the root of the SD card, so the app
+          lands in \`/mnt/SDCARD/App/DPadChat/\`. Then open **Apps > D-Pad Chat**.
+
+          Requires a Miyoo Mini **Plus** running Onion OS 4.x. The original Mini
+          has no WiFi and is not supported.
+
+          Set an API key before first use:
+
+          \`\`\`
+          api_key=<your key>
+          \`\`\`
+
+          in \`/mnt/SDCARD/App/DPadChat/data/settings.cfg\`.
+          EOF
+
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file notes.md \
+            "dist/DPadChat-v$VERSION.zip"
+
+          echo "### Released [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION) (\`$KIND\`)" \
+            >>"$GITHUB_STEP_SUMMARY"

@@ -11,7 +11,7 @@ HOST  ?=
 # Onion's documented login. USER is a shell builtin in make, so it is renamed.
 USER_ ?= onion
 
-.PHONY: help check lint test mock sim icon cacert docker-build test-docker shell-docker install install-ssh clean
+.PHONY: help check lint test mock sim icon cacert package version docker-build test-docker shell-docker install install-ssh clean
 
 help:
 	@echo 'Targets:'
@@ -22,6 +22,8 @@ help:
 	@echo '  sim           run the app locally at 40 columns'
 	@echo '  icon          regenerate app/res/icon.png'
 	@echo '  cacert        refresh the bundled CA certificates'
+	@echo '  package       build dist/DPadChat-v<version>.zip'
+	@echo '  version       print the current version'
 	@echo '  test-docker   run check inside the Alpine harness'
 	@echo '  shell-docker  interactive busybox ash in the harness'
 	@echo '  install       copy to an SD card    (make install CARD=/media/me/MIYOO)'
@@ -38,6 +40,7 @@ test:
 	@tests/api.sh
 	@tests/net.sh
 	@tests/history.sh
+	@tests/release.sh
 
 sim:
 	@tools/simulate.sh
@@ -50,6 +53,12 @@ icon:
 
 cacert:
 	@tools/fetch-cacert.sh
+
+package:
+	@python3 tools/package.py
+
+version:
+	@tools/version.sh
 
 docker-build:
 	@docker build -t $(IMAGE) .
@@ -69,5 +78,5 @@ install-ssh:
 	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)'
 
 clean:
-	@rm -rf app/data
-	@echo 'Removed app/data'
+	@rm -rf app/data dist
+	@echo 'Removed app/data and dist'

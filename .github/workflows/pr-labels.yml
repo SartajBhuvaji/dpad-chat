@@ -1,0 +1,48 @@
+name: PR label
+
+# Every pull request declares how it moves the version. The release workflow
+# reads the same label after merge, so this check is what stops a merge from
+# reaching it with nothing to act on.
+
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  bump-label:
+    name: Exactly one version label
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check labels
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -eu
+
+          found=$(printf '%s' "$LABELS" |
+            jq -r '[.[] | select(. == "major" or . == "minor" or . == "patch")] | join(" ")')
+          count=$(printf '%s' "$found" | wc -w | tr -d ' ')
+
+          if [ "$count" -eq 0 ]; then
+            echo "::error::Add one of: major, minor, patch."
+            echo
+            echo "  major  breaking change to how the app is installed or configured"
+            echo "  minor  new feature"
+            echo "  patch  fix, docs, or chore"
+            exit 1
+          fi
+
+          if [ "$count" -gt 1 ]; then
+            echo "::error::Found $count version labels ($found); exactly one is required."
+            exit 1
+          fi
+
+          current=$(tools/version.sh)
+          next=$(tools/version.sh next "$found")
+          echo "Label '$found' will release v$next (currently v$current)."
+          echo "### Version: \`$current\` → \`$next\` (\`$found\`)" >>"$GITHUB_STEP_SUMMARY"

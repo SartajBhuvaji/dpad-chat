@@ -184,6 +184,18 @@ dispatch_command() {
 # Conversation
 # -----------------------------------------------------------------------------
 
+# Keep the status field honest about the connection rather than only reporting
+# it after something has already failed. net_has_route reads /proc/net/route, so
+# this is a file read rather than a probe and is cheap enough to run before every
+# prompt; screen_status only repaints when the value actually changed.
+chat_refresh_status() {
+    if net_has_route; then
+        screen_status_from_route 1
+    else
+        screen_status_from_route 0
+    fi
+}
+
 # The state bar already carries the name, version and model, so the banner is
 # only drawn when there are no bars to carry it.
 chat_header() {
@@ -266,6 +278,7 @@ _chat_failed() {
 repl() {
     RUNNING=1
     while [ "$RUNNING" -eq 1 ]; do
+        chat_refresh_status
         printf '\n'
         ui_prompt
 
@@ -315,6 +328,7 @@ main() {
 
     ui_init
     screen_init
+    chat_refresh_status
     screen_clear
     chat_header
 

@@ -6,6 +6,10 @@
 # without a tty is the geometry, which is exactly the part that breaks when the
 # column count turns out not to be 40.
 
+# Resolve sourced files relative to this script. Must precede the first command
+# to apply file-wide.
+# shellcheck source-path=SCRIPTDIR
+
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -71,7 +75,11 @@ export NO_COLOR
 . "$REPO_ROOT/app/lib/screen.sh"
 
 ui_init
+
+# Read by the functions under test, which shellcheck cannot see from here.
+# shellcheck disable=SC2034
 UI_COLS=40
+# shellcheck disable=SC2034
 CFG_MODEL='gpt-4o-mini'
 SCREEN_STATUS='ready'
 
@@ -113,6 +121,29 @@ overflow_model='gpt-4o-mini-with-an-absurdly-long-suffix'
 assert_len 'state bar width survives a long model name' \
     "$(CFG_MODEL="$overflow_model" _screen_state_bar)" 40
 
+# --- connection status ----------------------------------------------------
+
+SCREEN_STATUS='ready'
+screen_status_from_route 0
+assert_eq 'losing the route reads offline' "$SCREEN_STATUS" 'offline'
+
+screen_status_from_route 1
+assert_eq 'regaining the route reads ready' "$SCREEN_STATUS" 'ready'
+
+screen_status_from_route 1
+assert_eq 'a working route stays ready' "$SCREEN_STATUS" 'ready'
+
+# A request that failed while the interface was up must not be papered over by
+# the next refresh: the route being fine is not the interesting fact.
+SCREEN_STATUS='error'
+screen_status_from_route 1
+assert_eq 'a working route does not clear an error' "$SCREEN_STATUS" 'error'
+
+screen_status_from_route 0
+assert_eq 'losing the route overrides an error' "$SCREEN_STATUS" 'offline'
+
+SCREEN_STATUS='ready'
+
 # --- rows --------------------------------------------------------------------
 
 assert_eq 'rows come from LINES when set' "$(LINES=30 _screen_detect_rows)" '30'
@@ -125,6 +156,7 @@ assert_eq 'rows fall back when LINES is empty' "$(LINES='' _screen_detect_rows)"
 _spin_glyph 0
 assert_eq 'spinner frame 0' "$SPIN_GLYPH" '-'
 _spin_glyph 1
+# shellcheck disable=SC1003
 assert_eq 'spinner frame 1' "$SPIN_GLYPH" '\'
 _spin_glyph 2
 assert_eq 'spinner frame 2' "$SPIN_GLYPH" '|'
@@ -182,8 +214,11 @@ else
 fi
 
 # Detection must not leave state behind in the data directory.
-assert_eq 'tick detection writes nothing to the data directory' \
-    "$(ls "$WORK_DIR" 2>/dev/null | grep -c 'spin-tick' || true)" '0'
+if [ -e "$WORK_DIR/spin-tick" ]; then
+    fail 'tick detection writes nothing to the data directory' 'spin-tick was created'
+else
+    pass 'tick detection writes nothing to the data directory'
+fi
 
 # -----------------------------------------------------------------------------
 

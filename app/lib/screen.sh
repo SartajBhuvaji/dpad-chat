@@ -129,6 +129,21 @@ screen_status() {
     screen_draw
 }
 
+# screen_status_from_route <1 when a default route exists, 0 when not>
+#
+# The connection half of the status field. A failed request outranks a working
+# route: that the interface is up is not news when the last thing sent over it
+# still came back an error, so 'error' is left alone until something succeeds.
+screen_status_from_route() {
+    if [ "$1" -eq 1 ]; then
+        if [ "${SCREEN_STATUS:-}" = 'offline' ]; then
+            screen_status 'ready'
+        fi
+    else
+        screen_status 'offline'
+    fi
+}
+
 _screen_state_bar() {
     _screen_compose " $SCREEN_APP_NAME  ${CFG_MODEL:-}" \
         "$(_screen_field "$SCREEN_STATUS") "
@@ -212,6 +227,9 @@ _spin_init_tick() {
 
 _spin_glyph() {
     _g_n="$1"
+    # A single-quoted backslash is one literal backslash and needs no escaping;
+    # shellcheck reads it as a misplaced quote escape.
+    # shellcheck disable=SC1003
     case $((_g_n % 4)) in
         0) SPIN_GLYPH='-' ;;
         1) SPIN_GLYPH='\' ;;

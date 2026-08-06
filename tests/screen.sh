@@ -176,6 +176,9 @@ assert_eq 'init draws nothing without a terminal' "$(cat "$WORK_DIR/init.out")" 
 assert_eq 'bars are disabled without a terminal' "$SCREEN_BARS" '0'
 assert_eq 'spinner is disabled without a terminal' "$SPIN_TTY" '0'
 
+# The restore sequence is optional, and calling without one is the form the
+# non-streaming path uses, so the bare call is deliberate.
+# shellcheck disable=SC2119
 spin_start 2>"$WORK_DIR/spin.out"
 assert_eq 'spin_start starts no process without a terminal' "$SPIN_PID" ''
 assert_contains 'spin_start still reports progress when piped' \

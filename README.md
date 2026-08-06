@@ -29,16 +29,27 @@ the installer:
 make install CARD=/media/you/MIYOO
 ```
 
-If SSH is enabled in Onion's Tweaks, pushing over the network is much faster than
-reseating the card:
+### Over SSH
+
+Usually the easiest route, and much faster than reseating the card. Enable SSH first
+under **Tweaks → Network → SSH**.
 
 ```sh
-make install-ssh HOST=192.168.1.42
+make install-ssh HOST=192.168.1.42              # app only
+make install-key HOST=192.168.1.42              # app, then prompt for the API key
 ```
 
-Enable it first under **Tweaks → Network → SSH**. The login is the **device's**, not your
-machine's and not WiFi: Onion's default is `onion` / `onion`. Override with
-`USER=` if you have changed it.
+The login is the **device's**, not your machine's and not WiFi: Onion's default is
+`onion` / `onion`. Override with `USER=` if you have changed it. You are asked for the
+password once — the connection is multiplexed, so the copy and the key write share it.
+
+`install-key` prompts with the input hidden and sends the key over stdin, so it never
+appears in your shell history, in `ps`, or in the device's process list. Settings already
+on the device are preserved: only `api_key` is rewritten, so a model or timeout you chose
+there survives a reinstall.
+
+For scripted use, `tools/install.sh --ssh <host> --key-file <path>` reads the key from a
+file instead of prompting.
 
 Then open **Apps → D-Pad Chat**.
 
@@ -59,9 +70,13 @@ history_messages = 10
 is five exchanges. Raising it buys longer memory at the cost of a larger request every
 turn; the conversation is not persisted across launches.
 
-Until M3 adds on-device entry, create that file before launching — over SSH, or by
-editing it on the card. The file is parsed against a whitelist of known keys rather than
-sourced, so nothing written in it is ever executed.
+`make install-key` writes this for you. Until M3 adds on-device entry, the alternative is
+to edit the file on the card by hand. Either way it is parsed against a whitelist of known
+keys rather than sourced, so nothing written in it is ever executed.
+
+FTP is available on Onion (`bftpd`, under Tweaks) but is a poor fit here: it sends the
+login *and* the key in cleartext over the network, which undoes the point of verifying
+TLS on every request. SSH is already set up and costs one password prompt.
 
 Every setting can be overridden by an environment variable (`DPAD_API_KEY`,
 `DPAD_MODEL`, `DPAD_BASE_URL`, `DPAD_TIMEOUT`), which is how the test suite points the
@@ -138,7 +153,7 @@ Enable SSH in Onion's Tweaks, then run the app directly over the network:
 
 ```sh
 make install-ssh HOST=<device-ip>
-ssh onion@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
+ssh -t onion@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
 ```
 
 This exercises everything except the `st` keyboard, and iterates in seconds. Launch from

@@ -210,6 +210,30 @@ characters.
 
 ---
 
+## Keeping your key safe
+
+The key lives in `data/settings.cfg` on a FAT32 card. FAT has no permission bits, so
+`chmod` is advisory at best — **anyone holding the card can read the key.** That is the
+storage, not the app, and there is no way around it on this hardware.
+
+What follows from that:
+
+- **Set a spending limit** on the key at [platform.openai.com][keys]. Treat it as
+  disposable.
+- **Revoke it** if the device or the card leaves your hands.
+- **Do not use FTP** to put it there. Onion offers `bftpd` under Tweaks, and it sends the
+  login and the file in cleartext across your network.
+
+What the app does control, it holds to a stricter line than Onion's own scripts do — those
+call `curl -k`. This one ships a CA bundle and verifies every connection, because every
+request carries the key. **There is no insecure fallback:** a missing bundle fails the
+request rather than downgrading it. The key never reaches the log, never appears in full on
+screen, and is handed to `curl` through a mode-600 config file rather than the command
+line where any other process could read it. `/update` downloads code, so it is held to the
+same rule again, and never sends your key to GitHub.
+
+The reasoning is in [PLAN.md §7 and §12](PLAN.md); all of it is covered by tests.
+
 ## First launch
 
 Open **Apps → D-Pad Chat**. You should get a mostly empty screen with a status bar across
@@ -316,20 +340,54 @@ checkout runs on your machine as-is.
 ```sh
 git clone https://github.com/SartajBhuvaji/dpad-chat.git
 cd dpad-chat
-
-make check         # lint + the full test suite
-make sim           # run it locally, pinned to the device's 40-column terminal
-make package       # build dist/DPadChat-vX.Y.Z.zip and .tar.gz
+make check
 ```
 
-`make check` needs `dash` and `shellcheck` to be complete — it skips either if absent and
-says so, but CI does not, so run `make test-docker` before opening a pull request. That
-runs the same suite under Alpine's busybox ash, which is the closest available stand-in
-for the device's userland.
+| Target | Does |
+| --- | --- |
+| `make check` | lint + the full test suite. The default |
+| `make sim` | run the app locally, pinned to the device's 40-column terminal |
+| `make mock` | run the mock API on `:8080` to poke at by hand |
+| `make test-docker` | the same suite under Alpine's busybox ash |
+| `make package` | build `dist/DPadChat-vX.Y.Z.zip` and `.tar.gz` |
+| `make icon` | regenerate `app/res/icon.png` from its source art |
+| `make cacert` | refresh the bundled CA certificates |
+| `make version` | what version this checkout is |
 
-The test suite needs no API key and costs nothing: it drives the client against
-`tools/mockapi.py`, a scriptable stand-in for the real endpoint. Design notes and the
-milestone history are in [PLAN.md](PLAN.md).
+**The suite needs no API key and costs nothing.** It drives the client against
+`tools/mockapi.py`, a scriptable stand-in for the API and for GitHub releases — a live
+endpoint cannot be asked to return 429 on demand, and proving that word wrap works should
+not spend tokens. Scenarios are chosen by the prompt itself:
+
+```
+scenario:unauthorized
+```
+
+Available: `ok`, `long`, `multiline`, `unauthorized`, `rate_limit`, `rate_limit_always`,
+`server_error`, `malformed`, `empty`, `slow`, `echo_payload`.
+
+**The device shell is busybox ash,** so the code stays strict POSIX: no arrays, no
+`[[ ]]`, no `$'...'`, no `local`. `make check` runs `dash -n` and `shellcheck -s sh` over
+every script — but it *skips* either one if it is not installed and only says so in
+passing, while CI does not skip. Run `make test-docker` before opening a pull request:
+Alpine's busybox is the closest available stand-in for the device userland, and it catches
+things a laptop will not.
+
+### Testing against real hardware
+
+Enable SSH in Onion's Tweaks, then run the app over the network without going through the
+Apps menu:
+
+```sh
+make install-ssh HOST=<device-ip>
+ssh -t onion@<device-ip> /mnt/SDCARD/App/DPadChat/chat.sh
+```
+
+This exercises everything except `st`'s keyboard, and iterates in seconds. Launch from the
+Apps menu for the final check.
+
+Design notes, the milestone history and the open hardware questions are in
+[PLAN.md](PLAN.md).
 
 [releases]: https://github.com/SartajBhuvaji/dpad-chat/releases
 [onion]: https://github.com/OnionUI/Onion

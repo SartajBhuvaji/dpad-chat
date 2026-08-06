@@ -498,6 +498,21 @@ The keyboard is validated on hardware; everything else is validated in the conta
 10. Is `/mnt/SDCARD` writable by the launcher at that point in the boot, and does the card
    have room for a second copy of the app (~150 KB) while it is being staged?
 
+### Release process
+
+Every pull request carries exactly one version label — `major`, `minor` or `patch` — and
+CI fails without it. On merge, the release workflow bumps `DPADCHAT_VERSION`, tags, and
+publishes two archives.
+
+`app/lib/common.sh` is the single source of truth for the version. Tags and releases are
+derived from it, not the other way round, so a checkout at any commit reports the same
+version the app prints in `/about`.
+
+Two archives because they have two audiences. The `.zip` is what a person downloads and
+unpacks on a desktop. The `.tar.gz` is what `/update` fetches: busybox always has `tar`
+and `gzip`, while `unzip` is an optional applet that may not be on the device, and finding
+that out after the download is too late. Both are byte-reproducible from the same tree.
+
 ---
 
 ## 12. Security notes

@@ -6,10 +6,27 @@ name: Release
 #
 # Pushing to main from here does not start another run: commits made with
 # GITHUB_TOKEN do not trigger workflows, which is what keeps this from looping.
+#
+# It can also be started by hand, because the automatic trigger is not something
+# this repository controls. A run has already been cancelled while queued, and a
+# merge has already produced no run at all; either leaves main ahead of the last
+# tag with no way to ship it. Manual dispatch takes the bump as an input, since
+# there is no pull request to read a label from.
 
 on:
   pull_request:
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to increment'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -23,7 +40,9 @@ concurrency:
 jobs:
   release:
     name: Tag and publish
-    if: github.event.pull_request.merged == true
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
@@ -32,15 +51,21 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Read the version label
+      - name: Decide the version
         id: bump
         env:
+          EVENT: ${{ github.event_name }}
+          INPUT_BUMP: ${{ inputs.bump }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -eu
 
-          kind=$(printf '%s' "$LABELS" |
-            jq -r '[.[] | select(. == "major" or . == "minor" or . == "patch")] | first // ""')
+          if [ "$EVENT" = 'workflow_dispatch' ]; then
+            kind="$INPUT_BUMP"
+          else
+            kind=$(printf '%s' "$LABELS" |
+              jq -r '[.[] | select(. == "major" or . == "minor" or . == "patch")] | first // ""')
+          fi
 
           if [ -z "$kind" ]; then
             echo "::error::Merged without a version label; nothing to release."
@@ -106,8 +131,24 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu
+
+          # A manual run has no pull request behind it, so the headline falls
+          # back to the range of commits actually being shipped.
+          if [ -n "$PR_TITLE" ]; then
+            headline="$PR_TITLE (#$PR_NUMBER)"
+          else
+            previous=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || printf '')
+            if [ -n "$previous" ]; then
+              headline="Changes since $previous:
+
+          $(git log --no-merges --format='- %s' "$previous"..HEAD^)"
+            else
+              headline='Manual release.'
+            fi
+          fi
+
           cat >notes.md <<EOF
-          $PR_TITLE (#$PR_NUMBER)
+          $headline
 
           ## Install
 

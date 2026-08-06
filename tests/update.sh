@@ -366,11 +366,15 @@ assert_eq 'nothing staged changes nothing' \
 # -----------------------------------------------------------------------------
 
 # launch.sh must hand off with `exec`, or it carries on reading its own file
-# while the installer overwrites it.
+# while the installer overwrites it. The needles below are source text being
+# searched for, so the single quotes are what keeps them literal; expanding
+# them would look for the value of a variable this script never sets.
 launcher=$(cat "$REPO_ROOT/app/launch.sh")
+# shellcheck disable=SC2016
 assert_says 'the launcher execs the installer' "$launcher" 'exec "$STAGE_DIR/apply.sh"'
 
 installer=$(cat "$REPO_ROOT/app/apply-update.sh")
+# shellcheck disable=SC2016
 assert_says 'the installer execs the launcher' "$installer" 'exec "$APP_DIR/launch.sh"'
 
 # The token would be readable in `ps` by anything else on the device.

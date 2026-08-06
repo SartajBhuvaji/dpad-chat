@@ -4,7 +4,8 @@
 # Runs inside Onion's bundled `st` terminal, which supplies the on-screen
 # keyboard. See PLAN.md for the full design and milestone breakdown.
 #
-# Milestone M5: replies stream in as they are generated.
+# Conversations persist across launches: relaunching resumes where you left off
+# and replays the most recent turns, rather than starting over.
 
 # Resolve sourced files relative to this script. Must precede the first command
 # to apply file-wide; attached to a single command it only covers that line.
@@ -37,10 +38,11 @@ API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
 
 cmd_help() {
     ui_info '/help   this list'
-    ui_info '/new    start a new conversation'
-    ui_info '/clear  clear the screen'
+    ui_info '/clear  start a new chat  (/c)'
     ui_info '/about  version and settings'
     ui_info '/quit   exit'
+    printf '\n'
+    ui_info 'Chats are kept when you close the app.'
     printf '\n'
     ui_info 'X toggles the keyboard. Hide it to read'
     ui_info 'long replies.'
@@ -92,19 +94,56 @@ _about_net() {
     fi
 }
 
-# Forgetting is a destructive action the user cannot undo, so it says so.
+# Now that chats survive a restart, clearing is the only way to lose one, so it
+# says what it discarded and where the copy went.
 cmd_new() {
     if history_is_empty; then
-        ui_info 'Already a new conversation.'
+        ui_clear
+        ui_banner
+        ui_info 'Already a new chat.'
         return 0
     fi
 
     count=$(history_count)
     if history_reset "$CFG_SYSTEM_PROMPT"; then
-        ui_info "Started a new conversation ($count messages forgotten)."
+        ui_clear
+        ui_banner
+        ui_info "New chat. $count messages cleared."
+        ui_info 'The previous one is in data/history.json.prev'
     else
-        ui_error 'Could not clear the conversation.'
+        ui_error 'Could not clear the chat.'
     fi
+}
+
+# Redraw the tail of a resumed conversation. Without this the model would carry
+# context the user cannot see, and its replies would refer to things that are
+# not on screen.
+chat_replay() {
+    total=$(history_count)
+    [ "$total" -gt 0 ] || return 0
+
+    length=$(history_length)
+    shown="$CFG_REPLAY_MESSAGES"
+    [ "$shown" -le "$total" ] || shown="$total"
+
+    if [ "$shown" -lt "$total" ]; then
+        ui_resume_note "$total messages, showing last $shown"
+    else
+        ui_resume_note "$total messages"
+    fi
+
+    index=$((length - shown))
+    while [ "$index" -lt "$length" ]; do
+        role=$(history_role "$index")
+        content=$(history_content "$index")
+
+        case "$role" in
+            user) ui_replay_user "$content" ;;
+            assistant) ui_assistant "$content" ;;
+        esac
+
+        index=$((index + 1))
+    done
 }
 
 # Returns 0 when the input was handled as a command, 1 when it is chat text.
@@ -115,11 +154,11 @@ dispatch_command() {
         /help | /h | '/?')
             cmd_help
             ;;
-        /clear | /cls)
-            ui_clear
-            ui_banner
-            ;;
-        /new | /reset)
+        # /clear starts a new chat rather than only clearing the screen, which
+        # is what it did before conversations persisted. With persistence a
+        # blank screen and a blank chat are the same thing to the user, and two
+        # commands one letter apart doing different things would be worse.
+        /clear | /c | /cls | /new | /reset)
             cmd_new
             ;;
         /about | /version)
@@ -239,7 +278,16 @@ main() {
     ui_init
     ui_clear
     ui_banner
-    ui_hints
+
+    if [ "$HISTORY_RECOVERED" -eq 1 ]; then
+        ui_warn 'The saved chat could not be read; starting a new one.'
+    fi
+
+    if [ "$HISTORY_RESUMED" -eq 1 ] && ! history_is_empty; then
+        chat_replay
+    else
+        ui_hints
+    fi
 
     # Stay in the REPL without a key: /help then explains where to put one,
     # which is more useful than exiting onto a menu with no explanation.

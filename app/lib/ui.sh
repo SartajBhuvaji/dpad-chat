@@ -123,6 +123,18 @@ ui_thinking() {
     printf '\n%sthinking...%s' "$C_DIM" "$C_RESET"
 }
 
+# A replayed turn is shown the way it was originally typed, so the transcript
+# on screen reads the same as it did before the app was closed.
+ui_replay_user() {
+    printf '\n%s> %s%s\n' "$C_USER" "$*" "$C_RESET" | ui_wrap
+}
+
+# Marks where an earlier session ended, so resumed context is never mistaken
+# for something typed just now.
+ui_resume_note() {
+    printf '%s-- resumed: %s --%s\n' "$C_DIM" "$*" "$C_RESET" | ui_wrap
+}
+
 # Streaming writes straight to the terminal as tokens arrive, so the colour has
 # to be opened before the reply starts and closed after it ends.
 ui_stream_begin() {

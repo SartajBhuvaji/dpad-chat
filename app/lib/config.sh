@@ -40,6 +40,11 @@ config_defaults() {
     # path is a five to ten second freeze followed by a wall of text, and the
     # device offers no other sign that it is working.
     CFG_STREAM='true'
+
+    # Messages replayed on screen when a conversation resumes. Two exchanges
+    # fit a 640x480 panel; replaying the full retained history would push the
+    # prompt off the bottom before the user has typed anything.
+    CFG_REPLAY_MESSAGES='4'
 }
 
 # -----------------------------------------------------------------------------
@@ -68,6 +73,7 @@ config_load() {
     [ -z "${DPAD_TIMEOUT:-}" ] || CFG_TIMEOUT="$DPAD_TIMEOUT"
     [ -z "${DPAD_HISTORY_MESSAGES:-}" ] || CFG_HISTORY_MESSAGES="$DPAD_HISTORY_MESSAGES"
     [ -z "${DPAD_STREAM:-}" ] || CFG_STREAM="$DPAD_STREAM"
+    [ -z "${DPAD_REPLAY_MESSAGES:-}" ] || CFG_REPLAY_MESSAGES="$DPAD_REPLAY_MESSAGES"
 
     _config_validate
 }
@@ -104,6 +110,7 @@ _config_read_file() {
             timeout) CFG_TIMEOUT="$value" ;;
             history_messages) CFG_HISTORY_MESSAGES="$value" ;;
             stream) CFG_STREAM="$value" ;;
+            replay_messages) CFG_REPLAY_MESSAGES="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"
@@ -116,6 +123,7 @@ _config_validate() {
     _config_require_positive_int CFG_CONNECT_TIMEOUT "$CFG_CONNECT_TIMEOUT" 10
     _config_require_positive_int CFG_TIMEOUT "$CFG_TIMEOUT" 60
     _config_require_positive_int CFG_HISTORY_MESSAGES "$CFG_HISTORY_MESSAGES" 10
+    _config_require_positive_int CFG_REPLAY_MESSAGES "$CFG_REPLAY_MESSAGES" 4
 
     case "$CFG_BASE_URL" in
         http://* | https://*) ;;
@@ -161,6 +169,7 @@ _config_require_positive_int() {
         CFG_CONNECT_TIMEOUT) CFG_CONNECT_TIMEOUT="$fallback" ;;
         CFG_TIMEOUT) CFG_TIMEOUT="$fallback" ;;
         CFG_HISTORY_MESSAGES) CFG_HISTORY_MESSAGES="$fallback" ;;
+        CFG_REPLAY_MESSAGES) CFG_REPLAY_MESSAGES="$fallback" ;;
     esac
 }
 

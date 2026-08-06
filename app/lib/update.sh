@@ -111,6 +111,7 @@ update_version_is_valid() {
 # Returns 0 only when the candidate is strictly greater. Equal versions and
 # anything unparseable return non-zero, so an update is offered only when the
 # ordering is certain.
+#
 # Each part is compared as a number, not as text. Sorted as text, "10" comes
 # before "9", so every release after 0.9.0 would look like a downgrade and the
 # app would stop offering updates without ever saying why.
@@ -349,6 +350,13 @@ _update_unpack() {
 # point. Only names under the expected prefix are accepted, which rules out
 # absolute paths and traversal without relying on the tar build being the
 # hardened one.
+#
+# The prefix test is the one that does the work, not the `..` test below it.
+# busybox `tar -t` reports entries already normalised, so a name written as
+# `App/DPadChat/../../../etc/passwd` is listed as `etc/passwd` and never
+# contains `..` by the time it is read here — it fails the prefix instead. GNU
+# tar reports it verbatim and fails the second test. Both refuse; which message
+# comes out depends on the tar, which is why the test asserts on neither.
 _update_entries_are_safe() {
     if ! tar -tzf "$1" >"$UPDATE_STAGE_DIR/entries.txt" 2>/dev/null; then
         UPDATE_ERROR='The archive could not be read.'
@@ -372,7 +380,7 @@ _update_entries_are_safe() {
 
         case "$entry" in
             *'..'*)
-                UPDATE_ERROR='The archive contains a path that points outside the app.'
+                UPDATE_ERROR="The archive contains a path that points outside the app: $entry"
                 log_error "update: rejected traversal entry '$entry'"
                 return 1
                 ;;

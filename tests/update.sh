@@ -239,7 +239,12 @@ fi
 # unpacked, not cleaned up afterwards.
 assert_eq 'an archive that escapes its prefix is refused' "$(stage traversal)" 'failed'
 stage traversal >/dev/null
-assert_says 'the refusal explains what was wrong' "$UPDATE_ERROR" 'outside the app'
+# Deliberately not asserting which of the two guards fired. busybox `tar -t`
+# normalises entries, so the escaping name arrives here as `etc/config.json` and
+# is caught by the prefix test; GNU tar reports it verbatim and it is caught by
+# the `..` test. Both refuse, and pinning the message would make this pass on a
+# laptop and fail on the device's userland — which is what it just did.
+assert_says 'the refusal blames the archive' "$UPDATE_ERROR" 'The archive contains'
 if [ -f "$WORK_DIR/data/update/ready" ]; then
     fail 'a refused archive stages nothing' 'ready was written anyway'
 else

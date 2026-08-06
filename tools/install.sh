@@ -3,6 +3,7 @@
 #
 #   tools/install.sh /media/user/MIYOO        copy to a mounted card
 #   tools/install.sh --ssh 192.168.1.42       rsync over Onion's dropbear
+#   tools/install.sh --ssh me@192.168.1.42    override the login
 #
 # Runtime state under app/data is deliberately not copied: it holds the API key
 # and conversation history, which belong to the device, not to the checkout.
@@ -10,6 +11,11 @@
 set -eu
 
 APP_NAME='DPadChat'
+
+# Onion ships two accounts (see its config/passwd): root, whose password is not
+# documented, and onion, which the project's own SSH instructions use. Default
+# to the one users are actually told about; both have write access to the card.
+SSH_USER="${DPAD_SSH_USER:-onion}"
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 SRC="$REPO_ROOT/app"
 
@@ -24,14 +30,29 @@ fail() {
 }
 
 install_ssh() {
-    host="$1"
+    target="$1"
     command -v rsync >/dev/null 2>&1 || fail 'rsync is required for --ssh'
-    dest="root@$host:/mnt/SDCARD/App/$APP_NAME/"
+
+    # Accept either "host" or "user@host"; only supply a default login when the
+    # caller did not choose one.
+    case "$target" in
+        *@*) ;;
+        *) target="$SSH_USER@$target" ;;
+    esac
+
+    dest="$target:/mnt/SDCARD/App/$APP_NAME/"
 
     printf 'Installing to %s\n' "$dest"
-    rsync -av --delete --exclude 'data/' "$SRC/" "$dest"
-    printf 'Done. Relaunch from the Apps menu, or run:\n'
-    printf '  ssh root@%s /mnt/SDCARD/App/%s/chat.sh\n' "$host" "$APP_NAME"
+    printf 'The password is the device password, not your machine or WiFi one.\n'
+    printf 'Onion default: onion / onion. Enable SSH in Tweaks > Network.\n\n'
+
+    # -a would imply -o -g -D, and preserving ownership needs root. The onion
+    # account is uid 1000, so every chown fails and rsync exits 23 even though
+    # the transfer worked. Ownership is meaningless on the card's FAT32 anyway.
+    rsync -rlptv --delete --exclude 'data/' "$SRC/" "$dest"
+
+    printf '\nDone. Relaunch from the Apps menu, or run:\n'
+    printf '  ssh %s /mnt/SDCARD/App/%s/chat.sh\n' "$target" "$APP_NAME"
 }
 
 install_card() {

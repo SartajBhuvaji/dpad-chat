@@ -8,8 +8,10 @@ SHELL := /bin/sh
 IMAGE := dpad-chat-test
 CARD  ?=
 HOST  ?=
+# Onion's documented login. USER is a shell builtin in make, so it is renamed.
+USER_ ?= onion
 
-.PHONY: help check lint test mock sim icon docker-build test-docker shell-docker install install-ssh clean
+.PHONY: help check lint test mock sim icon cacert docker-build test-docker shell-docker install install-ssh clean
 
 help:
 	@echo 'Targets:'
@@ -19,10 +21,11 @@ help:
 	@echo '  mock          run the mock API on :8080 for manual poking'
 	@echo '  sim           run the app locally at 40 columns'
 	@echo '  icon          regenerate app/res/icon.png'
+	@echo '  cacert        refresh the bundled CA certificates'
 	@echo '  test-docker   run check inside the Alpine harness'
 	@echo '  shell-docker  interactive busybox ash in the harness'
 	@echo '  install       copy to an SD card    (make install CARD=/media/me/MIYOO)'
-	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42)'
+	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42 [USER=onion])'
 	@echo '  clean         remove local run state'
 
 check: lint test
@@ -33,6 +36,7 @@ lint:
 test:
 	@tests/smoke.sh
 	@tests/api.sh
+	@tests/net.sh
 
 sim:
 	@tools/simulate.sh
@@ -42,6 +46,9 @@ mock:
 
 icon:
 	@python3 tools/make_icon.py
+
+cacert:
+	@tools/fetch-cacert.sh
 
 docker-build:
 	@docker build -t $(IMAGE) .
@@ -57,8 +64,8 @@ install:
 	@tools/install.sh '$(CARD)'
 
 install-ssh:
-	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip>' >&2; exit 1; }
-	@tools/install.sh --ssh '$(HOST)'
+	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)'
 
 clean:
 	@rm -rf app/data

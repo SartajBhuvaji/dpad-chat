@@ -25,6 +25,9 @@ API_ERROR=''
 API_STATUS=''
 API_WORK=''
 
+# Set by chat.sh, which is the only component that knows where the app lives.
+API_CACERT="${DPAD_CACERT:-}"
+
 # -----------------------------------------------------------------------------
 # Request
 # -----------------------------------------------------------------------------
@@ -36,6 +39,16 @@ api_send() {
 
     if ! config_has_key; then
         API_ERROR='No API key set. See /help.'
+        return 1
+    fi
+
+    if ! api_tls_ready; then
+        API_ERROR="Missing CA bundle at $API_CACERT. Reinstall the app; refusing to send the key unverified."
+        return 1
+    fi
+
+    if ! net_preflight "$CFG_BASE_URL"; then
+        API_ERROR="$NET_ERROR"
         return 1
     fi
 
@@ -126,6 +139,40 @@ max-time = $CFG_TIMEOUT
 write-out = "%{http_code}"
 output = "$API_WORK/body.json"
 EOF
+
+    _api_append_tls_config
+}
+
+# Onion ships no CA store, which is why its own scripts use `curl -k`. That is
+# fine for public release metadata and not fine here, so the app carries its own
+# bundle and points curl at it explicitly.
+#
+# There is deliberately no insecure fallback. If the bundle is missing, the
+# request fails rather than sending the key over a connection nobody verified.
+_api_append_tls_config() {
+    case "$CFG_BASE_URL" in
+        https://*) ;;
+        *) return 0 ;;
+    esac
+
+    cat >>"$API_WORK/curl.cfg" <<EOF
+cacert = "$API_CACERT"
+proto = "=https"
+tlsv1.2
+EOF
+}
+
+# api_tls_ready
+#
+# Checked once at startup rather than per request, so a missing bundle is
+# reported before the user has typed anything.
+api_tls_ready() {
+    case "$CFG_BASE_URL" in
+        https://*) ;;
+        *) return 0 ;;
+    esac
+
+    [ -r "$API_CACERT" ]
 }
 
 _api_attempt() {

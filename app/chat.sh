@@ -4,7 +4,7 @@
 # Runs inside Onion's bundled `st` terminal, which supplies the on-screen
 # keyboard. See PLAN.md for the full design and milestone breakdown.
 #
-# Milestone M1: single-turn requests against the chat completions API.
+# Milestone M4: verified TLS, clock sync, and network preflight.
 # Conversation history arrives in M2, interactive key entry in M3.
 
 # Resolve sourced files relative to this script. Must precede the first command
@@ -22,10 +22,13 @@ readonly APP_DIR
 . "$APP_DIR/lib/ui.sh"
 # shellcheck source=lib/config.sh
 . "$APP_DIR/lib/config.sh"
+# shellcheck source=lib/net.sh
+. "$APP_DIR/lib/net.sh"
 # shellcheck source=lib/api.sh
 . "$APP_DIR/lib/api.sh"
 
 DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
+API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
 
 # -----------------------------------------------------------------------------
 # Commands
@@ -58,7 +61,31 @@ cmd_about() {
     fi
     ui_info "model    $CFG_MODEL"
     ui_info "key      $(config_redact_key)"
+    ui_info "tls      $(_about_tls)"
+    ui_info "net      $(_about_net)"
     ui_info "data     $DATA_DIR"
+}
+
+_about_tls() {
+    case "$CFG_BASE_URL" in
+        https://*)
+            if [ -r "$API_CACERT" ]; then
+                printf 'verified (%s certs)' \
+                    "$(grep -c 'BEGIN CERTIFICATE' "$API_CACERT" 2>/dev/null || printf '?')"
+            else
+                printf 'MISSING BUNDLE'
+            fi
+            ;;
+        *) printf 'not used (plain http)' ;;
+    esac
+}
+
+_about_net() {
+    if net_has_route; then
+        printf 'route ok, clock %s' "$(clock_year)"
+    else
+        printf 'no route'
+    fi
 }
 
 # Returns 0 when the input was handled as a command, 1 when it is chat text.

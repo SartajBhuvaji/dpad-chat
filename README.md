@@ -6,9 +6,9 @@ Runs inside Onion's bundled `st` terminal, so the on-screen keyboard comes for f
 press **X** to bring it up, type with the D-pad, **Start** to send, **X** again to hide it
 and read the reply.
 
-> **Status: milestone M0.** The app installs, appears in the Apps menu, and runs its
-> command REPL. Model responses are stubbed — the API client lands in M1. See
-> [PLAN.md](PLAN.md) for the full design and milestone breakdown.
+> **Status: milestone M1.** The app installs, appears in the Apps menu, and answers
+> single-turn questions against the chat completions API. Conversation history arrives in
+> M2 and on-device key entry in M3. See [PLAN.md](PLAN.md) for the full breakdown.
 
 ## Requirements
 
@@ -32,6 +32,26 @@ make install-ssh HOST=192.168.1.42
 ```
 
 Then open **Apps → D-Pad Chat**.
+
+## Configuration
+
+Settings live in `data/settings.cfg` next to the app, as `key=value` lines. Only
+`api_key` is required:
+
+```ini
+api_key = <paste your key here>
+model = gpt-4o-mini
+max_tokens = 512
+timeout = 60
+```
+
+Until M3 adds on-device entry, create that file before launching — over SSH, or by
+editing it on the card. The file is parsed against a whitelist of known keys rather than
+sourced, so nothing written in it is ever executed.
+
+Every setting can be overridden by an environment variable (`DPAD_API_KEY`,
+`DPAD_MODEL`, `DPAD_BASE_URL`, `DPAD_TIMEOUT`), which is how the test suite points the
+app at a mock server.
 
 ## Controls
 
@@ -63,10 +83,23 @@ No cross-compiler is needed: the app is POSIX shell calling binaries that alread
 with Onion OS.
 
 ```sh
-make check    # lint + smoke tests
-make sim      # run locally, pinned to the device's 40-column terminal
+make check         # lint + both test suites
+make sim           # run locally, pinned to the device's 40-column terminal
 make test-docker   # same suite under Alpine's busybox ash
+make mock          # run the mock API on :8080 to poke at by hand
 ```
+
+`tests/api.sh` drives the client against `tools/mockapi.py`, a scriptable stand-in for
+the real endpoint. **No API key is needed to run the suite, and it costs nothing** — a
+live endpoint cannot be asked to return 429 on demand, and proving that word wrap works
+should not spend tokens. Scenarios are chosen by the prompt:
+
+```
+scenario:unauthorized
+```
+
+Available: `ok`, `long`, `multiline`, `unauthorized`, `rate_limit`, `rate_limit_always`,
+`server_error`, `malformed`, `empty`, `slow`, `echo_payload`.
 
 `make check` runs `dash -n` and `shellcheck -s sh` over every script. The device shell is
 busybox ash, so the code stays strict POSIX — no arrays, no `[[ ]]`, no `$'...'`.
@@ -101,19 +134,23 @@ app/            what gets copied to /mnt/SDCARD/App/DPadChat/
   config.json     Onion app manifest
   launch.sh       entry point; starts st with chat.sh inside it
   chat.sh         the REPL
-  lib/            shared helpers (paths, logging, rendering)
+  lib/            shared helpers: paths, logging, rendering, settings, client
   res/            icon
-tests/          smoke tests
-tools/          lint, simulate, install, icon generator
+tests/          smoke tests and API tests
+tools/          lint, simulate, install, mock server, icon generator
 ```
 
 ## Security
 
-The OpenAI API key will be stored in plain text under `app/data/`, which is git-ignored.
+The API key is stored in plain text under `app/data/`, which is git-ignored.
 FAT32 carries no permission bits, so anyone with physical access to the SD card can read
 it — use a key with a spending limit set. Unlike Onion's own scripts, which call
-`curl -k`, this app ships a CA bundle and verifies TLS, because every request carries
-that key.
+`curl -k`, this app will ship a CA bundle and verify TLS (M4), because every request
+carries that key.
+
+The key is never written to the log, never printed in full on screen — `/about` shows it
+redacted — and reaches curl through a mode-600 config file rather than the command line,
+where any other process could read it. All three are covered by tests.
 
 ## License
 

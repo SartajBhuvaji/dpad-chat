@@ -116,3 +116,19 @@ ui_assistant() {
 ui_prompt() {
     printf '%s> %s' "$C_USER" "$C_RESET"
 }
+
+# A request can take several seconds over WiFi on this hardware. Without a
+# marker the device looks frozen, and the obvious reaction is to press buttons.
+ui_thinking() {
+    printf '\n%sthinking...%s' "$C_DIM" "$C_RESET"
+}
+
+# Erase the thinking marker before the reply lands. Falls back to a newline
+# where the escape would be printed literally, as in piped test output.
+ui_clear_line() {
+    if [ -t 1 ]; then
+        printf '\r\033[K'
+    else
+        printf '\n'
+    fi
+}

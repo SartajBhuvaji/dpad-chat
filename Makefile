@@ -44,6 +44,7 @@ test:
 	@tests/release.sh
 	@tests/install.sh
 	@tests/stream.sh
+	@tests/screen.sh
 
 sim:
 	@tools/simulate.sh

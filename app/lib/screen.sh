@@ -315,8 +315,32 @@ spin_start() {
 spin_stop() {
     [ -n "${SPIN_PID:-}" ] || return 0
 
+    # The streaming path stops the indicator from inside the response pipeline,
+    # which is a subshell: the SPIN_PID='' at the end of this function never
+    # reaches the parent, so the parent calls this again once the reply has
+    # finished. The stop file is the only state both shells can see.
+    #
+    # Without this check the second call erases the line the reply ended on, and
+    # the answer appears and then vanishes.
+    if [ -f "$SPIN_STOP_FILE" ]; then
+        SPIN_PID=''
+        return 0
+    fi
+
     : >"$SPIN_STOP_FILE" 2>/dev/null || :
     kill "$SPIN_PID" 2>/dev/null || :
+
+    # `wait` only reaps a child of *this* shell, and in the pipeline the loop is
+    # a sibling, so it returns immediately having proved nothing. kill is
+    # asynchronous, so without waiting for the process to actually go, a frame
+    # already on its way to the terminal lands after the erase below — which is
+    # the reply appearing to be printed after the word "thinking". Polling a
+    # builtin costs no forks, and the loop dies in microseconds.
+    _s_tries=0
+    while [ "$_s_tries" -lt 200 ] && kill -0 "$SPIN_PID" 2>/dev/null; do
+        _s_tries=$((_s_tries + 1))
+    done
+
     wait "$SPIN_PID" 2>/dev/null || :
 
     # Erase the indicator so the reply starts on a clean line. The stop file is

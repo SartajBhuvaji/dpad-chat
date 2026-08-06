@@ -1,0 +1,18 @@
+# Runtime state. Holds the API key and conversation history, and must never
+# reach the repository.
+app/data/
+*.log
+*.log.1
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

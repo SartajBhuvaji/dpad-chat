@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shell tooling
+        run: sudo apt-get update && sudo apt-get install -y dash shellcheck
+
+      - name: Lint
+        run: tools/lint.sh
+
+      - name: Smoke tests
+        run: tests/smoke.sh
+
+  busybox:
+    name: Busybox (device userland)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The device runs busybox ash, so the suite has to pass there and not
+      # only under dash. This is the closest available stand-in for hardware.
+      - name: Build harness
+        run: docker build -t dpad-chat-test .
+
+      - name: Lint and test under busybox ash
+        run: docker run --rm dpad-chat-test
+
+  icon:
+    name: Icon is reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Guards against the committed PNG drifting from its generator.
+      - name: Regenerate and compare
+        run: |
+          python3 tools/make_icon.py
+          git diff --exit-code -- app/res/icon.png

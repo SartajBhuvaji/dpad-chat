@@ -331,18 +331,29 @@ The REPL never dies on a failed request — errors return to the prompt.
 | **M2** | Interactive REPL + history + trimming | Done. Multi-turn context, trimming, rollback on failure |
 | **M3** | First-run key entry, `settings.cfg`, slash commands | Fresh install is usable with no file editing |
 | **M4** | Robustness pass (§8) + clock sync + `--cacert` | Done. Verified TLS with no fallback, route and clock preflight |
-| **M5** | Streaming replies | Tokens appear progressively (see below) |
+| **M5** | Streaming replies | Done. Tokens appear as generated; timing is asserted |
 
-Streaming lands last because it's the riskiest piece. Approach — one `jq` process for the
-whole stream, not one per token, which would crawl on a 1.2 GHz A7:
+Streaming landed last because it was the riskiest piece, and the risk was real: the
+device's busybox is 1.20.2 from 2019 and its `sed` has no `-u`, so the planned pipeline
+would have block-buffered and defeated the point. The shipped version drops `sed`
+entirely — the shell strips the `data: ` prefix itself, and `read` is unbuffered:
 
 ```sh
-curl -N ... | sed -u -e '/^data: \[DONE\]/d' -n -e 's/^data: //p' \
-            | jq -j --unbuffered '.choices[0].delta.content // empty'
+curl -N ... | while IFS= read -r line; do
+    case "$line" in
+        'data: [DONE]') break ;;
+        'data: '*) printf '%s\n' "${line#data: }" ;;
+    esac
+done | jq -j --unbuffered '.choices[0].delta.content // empty'
 ```
 
-If busybox `sed -u` or `jq --unbuffered` misbehave on-device, v1 ships non-streaming and
-streaming moves to v1.1. M0–M4 is a complete, shippable app on its own.
+Still one `jq` process for the whole stream — one per token would crawl on a 1.2 GHz A7 —
+and the prefix strip costs no process at all. The device's `jq` is 1.6 and supports
+`--unbuffered`.
+
+One trade-off: streamed text is not passed through `fold -s`, because `fold` would buffer
+for the same reason `sed` did. The terminal wraps instead, which can split a word. Set
+`stream = false` for the buffered path with clean wrapping.
 
 ---
 

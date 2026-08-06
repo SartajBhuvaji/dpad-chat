@@ -123,6 +123,16 @@ ui_thinking() {
     printf '\n%sthinking...%s' "$C_DIM" "$C_RESET"
 }
 
+# Streaming writes straight to the terminal as tokens arrive, so the colour has
+# to be opened before the reply starts and closed after it ends.
+ui_stream_begin() {
+    printf '\n%s' "$C_BOT"
+}
+
+ui_stream_end() {
+    printf '%s\n' "$C_RESET"
+}
+
 # Erase the thinking marker before the reply lands. Falls back to a newline
 # where the escape would be printed literally, as in piped test output.
 ui_clear_line() {

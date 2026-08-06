@@ -6,9 +6,9 @@ Runs inside Onion's bundled `st` terminal, so the on-screen keyboard comes for f
 press **X** to bring it up, type with the D-pad, **Start** to send, **X** again to hide it
 and read the reply.
 
-> **Status: milestone M2.** The app installs, appears in the Apps menu, and holds a
-> multi-turn conversation over verified TLS. On-device key entry arrives in M3 and
-> streaming in M5. See [PLAN.md](PLAN.md) for the full breakdown.
+> **Status: v1 feature-complete.** The app installs, appears in the Apps menu, and holds
+> a multi-turn conversation over verified TLS, with replies streaming in as they are
+> generated. See [PLAN.md](PLAN.md) for the design and what was deliberately left out.
 
 ## Requirements
 
@@ -64,7 +64,13 @@ model = gpt-4o-mini
 max_tokens = 512
 timeout = 60
 history_messages = 10
+stream = true
 ```
+
+`stream = false` waits for the whole reply instead of showing it as it arrives. The
+buffered path wraps text on word boundaries; the streaming path lets the terminal wrap,
+which can split a word across lines. That is the trade: a five to ten second freeze, or
+occasionally an awkward line break.
 
 `history_messages` caps how much of the conversation is resent each turn — ten messages
 is five exchanges. Raising it buys longer memory at the cost of a larger request every

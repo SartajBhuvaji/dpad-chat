@@ -39,6 +39,9 @@ jobs:
       - name: Installer tests
         run: tests/install.sh
 
+      - name: Streaming tests
+        run: tests/stream.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

@@ -11,6 +11,10 @@
 
 set -eu
 
+# These exercise the buffered path: HTTP status mapping, JSON parsing, and the
+# shape of the request. tests/stream.sh owns the streaming transport, so the
+# transport is pinned here rather than following the default.
+
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 COLS=40
 
@@ -58,6 +62,7 @@ ask() {
         DPAD_DATA_DIR="$WORK_DIR/data" \
         DPAD_API_KEY="${TEST_API_KEY:-fixture-value-not-a-secret}" \
         DPAD_BASE_URL="$MOCK_URL" \
+        DPAD_STREAM=false \
         DPAD_TIMEOUT="${TEST_TIMEOUT:-15}" \
         "$REPO_ROOT/app/chat.sh" 2>&1
 }
@@ -150,6 +155,7 @@ assert_says 'an unexpected status is reported' "$out" 'Unexpected response 400'
 out=$(printf 'scenario:server_error\nhello\n/quit\n' | env \
     COLUMNS="$COLS" NO_COLOR=1 DPAD_DATA_DIR="$WORK_DIR/data" \
     DPAD_API_KEY='fixture-value-not-a-secret' DPAD_BASE_URL="$MOCK_URL" \
+    DPAD_STREAM=false \
     "$REPO_ROOT/app/chat.sh" 2>&1)
 assert_contains 'the REPL survives a failed request' "$out" 'You said: hello'
 
@@ -169,7 +175,7 @@ assert_contains 'max_tokens is sent' "$out" 'max_tokens'
 out=$(printf 'hello\n/quit\n' | env \
     COLUMNS="$COLS" NO_COLOR=1 DPAD_DATA_DIR="$WORK_DIR/data" \
     DPAD_API_KEY='fixture-value-not-a-secret' \
-    DPAD_BASE_URL='http://127.0.0.1:1/v1' \
+    DPAD_BASE_URL='http://127.0.0.1:1/v1' DPAD_STREAM=false \
     "$REPO_ROOT/app/chat.sh" 2>&1)
 assert_says 'a refused connection is explained' "$out" 'Check WiFi'
 
@@ -182,7 +188,7 @@ assert_says 'a timeout is reported with its limit' "$out" 'Timed out after 1s'
 
 out=$(printf 'hello\n/quit\n' | env \
     COLUMNS="$COLS" NO_COLOR=1 DPAD_DATA_DIR="$WORK_DIR/nokey" \
-    DPAD_BASE_URL="$MOCK_URL" \
+    DPAD_BASE_URL="$MOCK_URL" DPAD_STREAM=false \
     "$REPO_ROOT/app/chat.sh" 2>&1)
 assert_contains 'a missing key is reported at startup' "$out" 'No API key set'
 assert_says 'a missing key does not end the session' "$out" 'No API key set. See /help'
@@ -237,6 +243,7 @@ printf 'model=x\ninjected=$(touch %s/pwned)\n' "$WORK_DIR/evil" >"$WORK_DIR/evil
 printf '/quit\n' | env \
     COLUMNS="$COLS" NO_COLOR=1 DPAD_DATA_DIR="$WORK_DIR/evil" \
     DPAD_API_KEY='fixture-value-not-a-secret' DPAD_BASE_URL="$MOCK_URL" \
+    DPAD_STREAM=false \
     "$REPO_ROOT/app/chat.sh" >/dev/null 2>&1
 if [ -e "$WORK_DIR/evil/pwned" ]; then
     fail 'the settings file is not executed'

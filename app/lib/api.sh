@@ -33,10 +33,7 @@ API_CACERT="${DPAD_CACERT:-}"
 # -----------------------------------------------------------------------------
 
 # api_send <messages-file>
-api_send() {
-    API_REPLY=''
-    API_ERROR=''
-
+_api_preflight() {
     if ! config_has_key; then
         API_ERROR='No API key set. See /help.'
         return 1
@@ -52,9 +49,18 @@ api_send() {
         return 1
     fi
 
-    _api_workdir || return 1
+    _api_workdir
+}
 
-    if ! _api_build_payload "$1" >"$API_WORK/payload.json"; then
+api_send() {
+    API_REPLY=''
+    API_ERROR=''
+
+    if ! _api_preflight; then
+        return 1
+    fi
+
+    if ! _api_build_payload false "$1" >"$API_WORK/payload.json"; then
         API_ERROR='Could not build the request.'
         _api_cleanup
         return 1
@@ -87,6 +93,136 @@ api_send() {
     return "$result"
 }
 
+# api_send_stream <messages-file>
+#
+# Same contract as api_send, except the reply is written to stdout as it
+# arrives. API_REPLY still holds the whole text afterwards, for the transcript.
+api_send_stream() {
+    API_REPLY=''
+    API_ERROR=''
+
+    if ! _api_preflight; then
+        return 1
+    fi
+
+    if ! _api_build_payload true "$1" >"$API_WORK/payload.json"; then
+        API_ERROR='Could not build the request.'
+        _api_cleanup
+        return 1
+    fi
+
+    if _api_attempt_stream; then
+        result=0
+    else
+        result=1
+    fi
+
+    # Retrying after tokens have already been printed would repeat half a reply
+    # on screen, so a retry is only safe when nothing was emitted.
+    if [ "$result" -ne 0 ] && [ ! -s "$API_WORK/reply.txt" ] &&
+        _api_is_retryable "$API_STATUS"; then
+        log_info "retrying stream after HTTP $API_STATUS"
+        sleep "$API_RETRY_DELAY"
+        if _api_attempt_stream; then
+            result=0
+        else
+            result=1
+        fi
+    fi
+
+    if [ "$result" -eq 0 ]; then
+        API_REPLY=$(cat "$API_WORK/reply.txt")
+    fi
+
+    _api_cleanup
+    return "$result"
+}
+
+_api_attempt_stream() {
+    _api_write_curl_config stream
+
+    API_STATUS=''
+    : >"$API_WORK/reply.txt"
+    : >"$API_WORK/other.txt"
+    rm -f "$API_WORK/headers"
+
+    log_info "POST (stream) $CFG_BASE_URL/chat/completions model=$CFG_MODEL"
+
+    # curl's exit code has to travel through a file: POSIX sh has no
+    # PIPESTATUS, and the pipeline's status is jq's.
+    {
+        curl --config "$API_WORK/curl.cfg" 2>"$API_WORK/curl.err"
+        printf '%s' "$?" >"$API_WORK/curl.rc"
+    } | _api_sse_filter | jq -j --unbuffered '.choices[0].delta.content // empty' \
+        2>/dev/null | tee "$API_WORK/reply.txt"
+
+    curl_status=$(cat "$API_WORK/curl.rc" 2>/dev/null || printf '1')
+    API_STATUS=$(_api_status_from_headers)
+
+    if [ "$curl_status" -ne 0 ]; then
+        API_ERROR=$(_api_transport_error "$curl_status")
+        log_error "curl exit $curl_status: $(cat "$API_WORK/curl.err" 2>/dev/null)"
+        return 1
+    fi
+
+    if [ "$API_STATUS" != '200' ]; then
+        # An error arrives as a plain JSON body rather than as SSE, so the
+        # filter set it aside instead of printing it as if it were a reply.
+        cp "$API_WORK/other.txt" "$API_WORK/body.json" 2>/dev/null || :
+        _api_handle_response
+        return 1
+    fi
+
+    if [ ! -s "$API_WORK/reply.txt" ]; then
+        API_ERROR='The model returned an empty reply.'
+        return 1
+    fi
+
+    return 0
+}
+
+# Turns an SSE stream into one JSON object per line. Written as a shell loop
+# rather than sed: the device's busybox sed has no -u, so it block-buffers and
+# the tokens would arrive in chunks instead of as they are generated. `read` is
+# unbuffered, and this costs no process per token.
+_api_sse_filter() {
+    first=1
+    while IFS= read -r line; do
+        case "$line" in
+            'data: [DONE]')
+                break
+                ;;
+            'data: '*)
+                # Clear the waiting marker as the first token arrives. It goes
+                # to stderr so it cannot corrupt the JSON heading for jq.
+                if [ "$first" -eq 1 ]; then
+                    printf '\r\033[K' >&2
+                    first=0
+                fi
+                printf '%s\n' "${line#data: }"
+                ;;
+            '')
+                # SSE separates events with blank lines.
+                ;;
+            *)
+                printf '%s\n' "$line" >>"$API_WORK/other.txt"
+                ;;
+        esac
+    done
+}
+
+_api_status_from_headers() {
+    [ -f "$API_WORK/headers" ] || {
+        printf '000'
+        return 0
+    }
+    # A redirect or a proxy can produce several status lines; the last one is
+    # the response actually being read.
+    grep '^HTTP/' "$API_WORK/headers" 2>/dev/null |
+        tail -n 1 | cut -d' ' -f2 | tr -d '\r' ||
+        printf '000'
+}
+
 _api_workdir() {
     API_WORK=$(mktemp -d 2>/dev/null || mktemp -d -t dpad) || {
         API_ERROR='Could not create a temporary directory.'
@@ -110,10 +246,12 @@ _api_build_payload() {
     jq -n \
         --arg model "$CFG_MODEL" \
         --argjson max_tokens "$CFG_MAX_TOKENS" \
-        --slurpfile messages "$1" \
+        --argjson stream "${1:-false}" \
+        --slurpfile messages "$2" \
         '{
             model: $model,
             max_tokens: $max_tokens,
+            stream: $stream,
             messages: $messages[0]
         }'
 }
@@ -132,9 +270,22 @@ silent
 show-error
 connect-timeout = $CFG_CONNECT_TIMEOUT
 max-time = $CFG_TIMEOUT
+EOF
+
+    if [ "${1:-}" = 'stream' ]; then
+        # write-out would append the status code to the body, which in a stream
+        # means appending it to the reply. The status comes from the dumped
+        # headers instead, and no-buffer keeps curl from holding tokens back.
+        cat >>"$API_WORK/curl.cfg" <<EOF
+no-buffer
+dump-header = "$API_WORK/headers"
+EOF
+    else
+        cat >>"$API_WORK/curl.cfg" <<EOF
 write-out = "%{http_code}"
 output = "$API_WORK/body.json"
 EOF
+    fi
 
     _api_append_tls_config
 }

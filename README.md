@@ -120,9 +120,9 @@ All of these come from `st` itself.
 Chats are kept when you close the app. Reopening resumes where you left off and replays
 the most recent turns, so the context the model still has is the context you can see.
 
-`/clear` is therefore destructive — it is the only way to lose a chat. It reports how many
-messages went, and leaves the outgoing transcript in `data/history.json.prev`. Nothing
-reads that back; it exists so a mistyped `/c` has not thrown away an afternoon.
+`/clear` is therefore destructive, and final — it is the only way to lose a chat, and no
+copy is kept anywhere. The screen goes blank and the conversation is gone, on disk as well
+as on screen.
 
 ## Development
 

@@ -198,6 +198,55 @@ screen_status 'offline' >"$WORK_DIR/status.out" 2>&1
 assert_eq 'status draws nothing without bars' "$(cat "$WORK_DIR/status.out")" ''
 assert_eq 'status is recorded even with no bars to draw' "$SCREEN_STATUS" 'offline'
 
+# --- stopping twice ----------------------------------------------------------
+
+# The streaming path stops the indicator from inside the response pipeline,
+# which is a subshell, so the parent stops it again once the reply has finished.
+# The subshell is reproduced here with (...), because that is the whole bug: the
+# parent still has SPIN_PID set and would erase the line the reply ended on.
+SPIN_STOP_FILE="$WORK_DIR/stop-flag"
+SPIN_RESTORE=''
+rm -f "$SPIN_STOP_FILE"
+
+sleep 30 &
+SPIN_PID=$!
+watched="$SPIN_PID"
+
+(spin_stop) 2>"$WORK_DIR/first.out"
+assert_contains 'the first stop erases the indicator' \
+    "$(cat "$WORK_DIR/first.out")" '['
+
+if [ -f "$SPIN_STOP_FILE" ]; then
+    pass 'the first stop records itself where both shells can see it'
+else
+    fail 'the first stop records itself where both shells can see it'
+fi
+
+# The process must be gone before the erase is written, or a frame already on
+# its way lands after it and the reply reads as following the word "thinking".
+if kill -0 "$watched" 2>/dev/null; then
+    fail 'the indicator is dead before the screen is touched' 'still running'
+else
+    pass 'the indicator is dead before the screen is touched'
+fi
+
+spin_stop 2>"$WORK_DIR/second.out"
+assert_eq 'the second stop leaves the screen alone' \
+    "$(cat "$WORK_DIR/second.out")" ''
+assert_eq 'the second stop still clears the handle' "$SPIN_PID" ''
+
+# A later request gets its own indicator back: spin_start clears the marker, so
+# the guard above cannot leave the indicator permanently disabled.
+rm -f "$SPIN_STOP_FILE"
+sleep 30 &
+SPIN_PID=$!
+watched="$SPIN_PID"
+spin_stop 2>"$WORK_DIR/third.out"
+assert_contains 'a later request erases its own indicator' \
+    "$(cat "$WORK_DIR/third.out")" '['
+kill "$watched" 2>/dev/null || :
+SPIN_PID=''
+
 # --- tick detection ----------------------------------------------------------
 
 # The tick decides whether the indicator can animate at all. Whichever branch

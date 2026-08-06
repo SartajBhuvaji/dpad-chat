@@ -25,6 +25,10 @@ API_ERROR=''
 API_STATUS=''
 API_WORK=''
 
+# curl's exit code from the last attempt, so the caller can tell a dead network
+# apart from a rejected request without matching on the error text.
+API_TRANSPORT='0'
+
 # Set by chat.sh, which is the only component that knows where the app lives.
 API_CACERT="${DPAD_CACERT:-}"
 
@@ -157,6 +161,7 @@ _api_attempt_stream() {
         2>/dev/null | tee "$API_WORK/reply.txt"
 
     curl_status=$(cat "$API_WORK/curl.rc" 2>/dev/null || printf '1')
+    API_TRANSPORT="$curl_status"
     API_STATUS=$(_api_status_from_headers)
 
     if [ "$curl_status" -ne 0 ]; then
@@ -193,9 +198,17 @@ _api_sse_filter() {
                 break
                 ;;
             'data: '*)
-                # Clear the waiting marker as the first token arrives. It goes
-                # to stderr so it cannot corrupt the JSON heading for jq.
+                # Hand the screen over to the reply as the first token arrives:
+                # stop the waiting indicator, then erase the line it was on.
+                #
+                # This runs in the pipeline's subshell, so the write has to go
+                # to stderr or it would be parsed as JSON by jq downstream.
+                # spin_stop is looked up rather than called directly because
+                # the tests source this file without screen.sh.
                 if [ "$first" -eq 1 ]; then
+                    if command -v spin_stop >/dev/null 2>&1; then
+                        spin_stop
+                    fi
                     printf '\r\033[K' >&2
                     first=0
                 fi
@@ -330,6 +343,7 @@ _api_attempt() {
 
     API_STATUS=$(curl --config "$API_WORK/curl.cfg" 2>"$API_WORK/curl.err")
     curl_status=$?
+    API_TRANSPORT="$curl_status"
 
     if [ "$curl_status" -ne 0 ]; then
         API_ERROR=$(_api_transport_error "$curl_status")

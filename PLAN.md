@@ -440,6 +440,14 @@ The keyboard is validated on hardware; everything else is validated in the conta
    return to the Onion menu without a stuck process?
 5. Does the bundled `curl` negotiate TLS 1.3 with `api.openai.com`, and does it honor
    `--cacert` with a current Mozilla bundle?
+6. Does `st` honor **DECSTBM** (`ESC [ 2 ; 29 r`)? The two pinned bars depend on it. If the
+   region is ignored, both bars scroll away with the transcript and `screen.sh` needs a
+   redraw-per-turn fallback instead.
+7. Does busybox `sleep` accept a fractional argument? It decides whether the waiting
+   indicator animates at 10 fps or counts seconds at 1 fps. `screen.sh` detects this at
+   startup and degrades on its own, so this only confirms which of the two is in use.
+8. Do `ESC [ 30;43m` (black on yellow) and `ESC [ 30;47m` (black on white) render legibly
+   on the panel, and does the terminal clear the background to the end of the row?
 
 ---
 

@@ -42,6 +42,9 @@ jobs:
       - name: Streaming tests
         run: tests/stream.sh
 
+      - name: Status bars and waiting indicator
+        run: tests/screen.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

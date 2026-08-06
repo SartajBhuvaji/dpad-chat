@@ -20,6 +20,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/common.sh"
 # shellcheck source=lib/ui.sh
 . "$APP_DIR/lib/ui.sh"
+# shellcheck source=lib/screen.sh
+. "$APP_DIR/lib/screen.sh"
 # shellcheck source=lib/config.sh
 . "$APP_DIR/lib/config.sh"
 # shellcheck source=lib/net.sh
@@ -98,16 +100,16 @@ _about_net() {
 # says what it discarded and where the copy went.
 cmd_new() {
     if history_is_empty; then
-        ui_clear
-        ui_banner
+        screen_clear
+        chat_header
         ui_info 'Already a new chat.'
         return 0
     fi
 
     count=$(history_count)
     if history_reset "$CFG_SYSTEM_PROMPT"; then
-        ui_clear
-        ui_banner
+        screen_clear
+        chat_header
         ui_info "New chat. $count messages cleared."
         ui_info 'The previous one is in data/history.json.prev'
     else
@@ -182,6 +184,26 @@ dispatch_command() {
 # Conversation
 # -----------------------------------------------------------------------------
 
+# Keep the status field honest about the connection rather than only reporting
+# it after something has already failed. net_has_route reads /proc/net/route, so
+# this is a file read rather than a probe and is cheap enough to run before every
+# prompt; screen_status only repaints when the value actually changed.
+chat_refresh_status() {
+    if net_has_route; then
+        screen_status_from_route 1
+    else
+        screen_status_from_route 0
+    fi
+}
+
+# The state bar already carries the name, version and model, so the banner is
+# only drawn when there are no bars to carry it.
+chat_header() {
+    if [ "${SCREEN_BARS:-0}" -ne 1 ]; then
+        ui_banner
+    fi
+}
+
 # A failed request is never fatal: the message is rendered and the REPL carries
 # on, because losing the session to a dropped WiFi packet would be worse than
 # any error it could report.
@@ -191,25 +213,42 @@ chat_respond() {
         return 0
     fi
 
-    ui_thinking
-
+    # The indicator runs in the background because the shell blocks inside the
+    # streaming pipeline until the first token arrives. It stops itself there,
+    # replacing itself with the reply; the calls below cover the paths where no
+    # token ever comes.
+    #
     # api_send must run in this shell, not a command substitution: its results
     # come back in API_REPLY and API_ERROR, which a subshell would discard.
     if [ "$CFG_STREAM" = 'true' ]; then
+        # Opening the line before the indicator starts, not after: the writer is
+        # a separate process, and a newline printed underneath it would strand a
+        # stale marker on the line above. C_BOT is handed over so the reply
+        # keeps its colour once the indicator's own reset has cleared it.
         ui_stream_begin
+        spin_start "$C_BOT"
+
         if api_send_stream "$(history_path)"; then
+            spin_stop
             ui_stream_end
+            screen_status 'ready'
             _chat_remember "$API_REPLY"
         else
+            spin_stop
             ui_stream_end
             _chat_failed
         fi
     else
+        spin_start
+
         if api_send "$(history_path)"; then
+            spin_stop
             ui_clear_line
             ui_assistant "$API_REPLY"
+            screen_status 'ready'
             _chat_remember "$API_REPLY"
         else
+            spin_stop
             ui_clear_line
             _chat_failed
         fi
@@ -225,6 +264,13 @@ _chat_remember() {
 # next turn, so the model would see a question it never answered and the user
 # would watch it steer later replies.
 _chat_failed() {
+    # curl 6 and 7 are DNS and connect failures, the two that mean the network
+    # is gone rather than the request being refused.
+    case "${API_TRANSPORT:-0}" in
+        6 | 7) screen_status 'offline' ;;
+        *) screen_status 'error' ;;
+    esac
+
     ui_error "$API_ERROR"
     history_drop_last
 }
@@ -232,6 +278,7 @@ _chat_failed() {
 repl() {
     RUNNING=1
     while [ "$RUNNING" -eq 1 ]; do
+        chat_refresh_status
         printf '\n'
         ui_prompt
 
@@ -259,7 +306,11 @@ repl() {
 # Entry point
 # -----------------------------------------------------------------------------
 
+# The scroll region is global terminal state, so releasing it matters more than
+# the log line: without this, Onion gets a terminal that scrolls inside two
+# rows that are no longer there.
 on_exit() {
+    screen_teardown
     log_info '--- session ended ---'
 }
 
@@ -276,8 +327,10 @@ main() {
         die "Cannot write history to $DATA_DIR"
 
     ui_init
-    ui_clear
-    ui_banner
+    screen_init
+    chat_refresh_status
+    screen_clear
+    chat_header
 
     if [ "$HISTORY_RECOVERED" -eq 1 ]; then
         ui_warn 'The saved chat could not be read; starting a new one.'
@@ -285,7 +338,9 @@ main() {
 
     if [ "$HISTORY_RESUMED" -eq 1 ] && ! history_is_empty; then
         chat_replay
-    else
+    elif [ "${SCREEN_BARS:-0}" -ne 1 ]; then
+        # With the bars up the controls are pinned to the bottom row, so
+        # printing them into the transcript as well would just be a repeat.
         ui_hints
     fi
 

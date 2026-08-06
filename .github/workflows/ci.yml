@@ -30,6 +30,9 @@ jobs:
       - name: Preflight and TLS tests
         run: tests/net.sh
 
+      - name: History tests
+        run: tests/history.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

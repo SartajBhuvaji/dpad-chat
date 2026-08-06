@@ -30,6 +30,11 @@ config_defaults() {
 
     CFG_CONNECT_TIMEOUT='10'
     CFG_TIMEOUT='60'
+
+    # Messages kept besides the system prompt, so five exchanges. Enough for
+    # "and how much RAM does it have?" to resolve, without growing the request
+    # until every reply costs more than the last.
+    CFG_HISTORY_MESSAGES='10'
 }
 
 # -----------------------------------------------------------------------------
@@ -56,6 +61,7 @@ config_load() {
     [ -z "${DPAD_BASE_URL:-}" ] || CFG_BASE_URL="$DPAD_BASE_URL"
     [ -z "${DPAD_MODEL:-}" ] || CFG_MODEL="$DPAD_MODEL"
     [ -z "${DPAD_TIMEOUT:-}" ] || CFG_TIMEOUT="$DPAD_TIMEOUT"
+    [ -z "${DPAD_HISTORY_MESSAGES:-}" ] || CFG_HISTORY_MESSAGES="$DPAD_HISTORY_MESSAGES"
 
     _config_validate
 }
@@ -90,6 +96,7 @@ _config_read_file() {
             system_prompt) CFG_SYSTEM_PROMPT="$value" ;;
             connect_timeout) CFG_CONNECT_TIMEOUT="$value" ;;
             timeout) CFG_TIMEOUT="$value" ;;
+            history_messages) CFG_HISTORY_MESSAGES="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"
@@ -101,6 +108,7 @@ _config_validate() {
     _config_require_positive_int CFG_MAX_TOKENS "$CFG_MAX_TOKENS" 512
     _config_require_positive_int CFG_CONNECT_TIMEOUT "$CFG_CONNECT_TIMEOUT" 10
     _config_require_positive_int CFG_TIMEOUT "$CFG_TIMEOUT" 60
+    _config_require_positive_int CFG_HISTORY_MESSAGES "$CFG_HISTORY_MESSAGES" 10
 
     case "$CFG_BASE_URL" in
         http://* | https://*) ;;
@@ -137,6 +145,7 @@ _config_require_positive_int() {
         CFG_MAX_TOKENS) CFG_MAX_TOKENS="$fallback" ;;
         CFG_CONNECT_TIMEOUT) CFG_CONNECT_TIMEOUT="$fallback" ;;
         CFG_TIMEOUT) CFG_TIMEOUT="$fallback" ;;
+        CFG_HISTORY_MESSAGES) CFG_HISTORY_MESSAGES="$fallback" ;;
     esac
 }
 

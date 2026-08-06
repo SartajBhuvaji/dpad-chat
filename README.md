@@ -6,9 +6,9 @@ Runs inside Onion's bundled `st` terminal, so the on-screen keyboard comes for f
 press **X** to bring it up, type with the D-pad, **Start** to send, **X** again to hide it
 and read the reply.
 
-> **Status: milestone M4.** The app installs, appears in the Apps menu, and answers
-> single-turn questions over verified TLS. Conversation history arrives in M2, on-device
-> key entry in M3, streaming in M5. See [PLAN.md](PLAN.md) for the full breakdown.
+> **Status: milestone M2.** The app installs, appears in the Apps menu, and holds a
+> multi-turn conversation over verified TLS. On-device key entry arrives in M3 and
+> streaming in M5. See [PLAN.md](PLAN.md) for the full breakdown.
 
 ## Requirements
 
@@ -47,7 +47,12 @@ api_key = <paste your key here>
 model = gpt-4o-mini
 max_tokens = 512
 timeout = 60
+history_messages = 10
 ```
+
+`history_messages` caps how much of the conversation is resent each turn — ten messages
+is five exchanges. Raising it buys longer memory at the cost of a larger request every
+turn; the conversation is not persisted across launches.
 
 Until M3 adds on-device entry, create that file before launching — over SSH, or by
 editing it on the card. The file is parsed against a whitelist of known keys rather than
@@ -77,8 +82,9 @@ All of these come from `st` itself.
 | Command | Effect |
 | --- | --- |
 | `/help` | list commands |
+| `/new` | start a new conversation |
 | `/clear` | clear the screen |
-| `/about` | version, terminal width, data directory |
+| `/about` | version, width, model, TLS state, history size |
 | `/quit` | exit |
 
 ## Development
@@ -141,7 +147,7 @@ app/            what gets copied to /mnt/SDCARD/App/DPadChat/
   chat.sh         the REPL
   lib/            shared helpers: paths, logging, rendering, settings, client
   res/            icon and CA bundle
-tests/          smoke, API, and preflight tests
+tests/          smoke, API, preflight, and history tests
 tools/          lint, simulate, install, mock server, icon and CA fetchers
 ```
 

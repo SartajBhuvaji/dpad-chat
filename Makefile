@@ -37,6 +37,7 @@ test:
 	@tests/smoke.sh
 	@tests/api.sh
 	@tests/net.sh
+	@tests/history.sh
 
 sim:
 	@tools/simulate.sh

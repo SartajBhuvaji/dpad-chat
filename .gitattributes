@@ -1,0 +1,34 @@
+# Line endings are pinned rather than left to core.autocrlf.
+#
+# The device execs scripts by their shebang. A CR at the end of `#!/bin/sh`
+# makes the kernel look for an interpreter literally named "/bin/sh\r", which
+# does not exist — and busybox reports that as
+#
+#     sh: /mnt/SDCARD/App/DPadChat/chat.sh: not found
+#
+# for a file that is plainly there, which sends you looking at paths and
+# permissions instead. A checkout on a Windows filesystem is where the CRs come
+# from, and this repository is developed on one.
+
+* text=auto eol=lf
+
+# Spelled out for the file types that reach the device or run in CI, so the
+# rule survives someone setting core.autocrlf on their own machine.
+*.sh        text eol=lf
+*.py        text eol=lf
+*.md        text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.cfg       text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+
+# Never converted. The CA bundle is text, but `make cacert` records a checksum
+# over its exact bytes and CI verifies it, so any rewrite on checkout would fail
+# that check on one platform and pass on another.
+*.pem       -text
+*.sha256    -text
+
+*.png       binary
+*.zip       binary
+*.tar.gz    binary

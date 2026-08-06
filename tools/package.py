@@ -90,7 +90,22 @@ def verify(app_dir: pathlib.Path, files: list[pathlib.Path]) -> None:
     if leaked:
         sys.exit(f"package: runtime data leaked into the package: {leaked}")
 
-    del app_dir
+    # The last chance to catch a CRLF checkout before it ships. A shebang ending
+    # in CR makes the device look for an interpreter named "/bin/sh\r" and
+    # report the script as "not found", which is a miserable thing to debug from
+    # a handheld. tools/lint.sh checks the tree; this checks what actually goes
+    # in the archive, because a release built on a Windows checkout is exactly
+    # the case where the two differ.
+    crlf = [
+        str(f) for f in files
+        if f.suffix == ".sh" and b"\r\n" in (app_dir / f).read_bytes()
+    ]
+    if crlf:
+        sys.exit(
+            "package: carriage returns would ship in: "
+            + ", ".join(crlf)
+            + " - restore the checkout with LF endings before packaging"
+        )
 
 
 def mode_for(relative: pathlib.Path) -> int:

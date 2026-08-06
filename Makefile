@@ -22,7 +22,7 @@ help:
 	@echo '  sim           run the app locally at 40 columns'
 	@echo '  icon          regenerate app/res/icon.png'
 	@echo '  cacert        refresh the bundled CA certificates'
-	@echo '  package       build dist/DPadChat-v<version>.zip'
+	@echo '  package       build dist/DPadChat-v<version>.zip and .tar.gz'
 	@echo '  version       print the current version'
 	@echo '  test-docker   run check inside the Alpine harness'
 	@echo '  shell-docker  interactive busybox ash in the harness'
@@ -45,6 +45,7 @@ test:
 	@tests/install.sh
 	@tests/stream.sh
 	@tests/screen.sh
+	@tests/update.sh
 
 sim:
 	@tools/simulate.sh

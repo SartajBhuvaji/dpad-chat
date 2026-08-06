@@ -35,6 +35,10 @@ SCREEN_KEYS_RIGHT='/help '
 
 SCREEN_APP_NAME='D-Pad Chat'
 
+# The word beside the waiting indicator. spin_start overwrites it per request;
+# the default is here so reading it is safe under `set -u`.
+SPIN_LABEL='thinking'
+
 # -----------------------------------------------------------------------------
 # Setup
 # -----------------------------------------------------------------------------
@@ -251,10 +255,10 @@ _spin_loop() {
 
         if [ "$SPIN_FPS" -gt 1 ]; then
             _spin_glyph "$_l_frames"
-            printf '\r%s%s thinking %ss%s' "$C_DIM" "$SPIN_GLYPH" "$_l_secs" \
-                "$C_RESET" >&2
+            printf '\r%s%s %s %ss%s' "$C_DIM" "$SPIN_GLYPH" "$SPIN_LABEL" \
+                "$_l_secs" "$C_RESET" >&2
         else
-            printf '\r%sthinking %ss%s' "$C_DIM" "$_l_secs" "$C_RESET" >&2
+            printf '\r%s%s %ss%s' "$C_DIM" "$SPIN_LABEL" "$_l_secs" "$C_RESET" >&2
         fi
 
         _l_frames=$((_l_frames + 1))
@@ -275,20 +279,25 @@ _spin_loop() {
     done
 }
 
-# spin_start [restore-sequence]
+# spin_start [restore-sequence] [label]
 #
 # Each frame ends with a colour reset, which would also cancel the colour the
 # caller opened for the reply that follows. The restore sequence is re-emitted
 # by spin_stop so the reply streams in the colour it was meant to have.
+#
+# The label is reset on every call rather than left set, so a caller that waits
+# on something other than the model cannot leave the wrong word behind for the
+# next request.
 spin_start() {
     SPIN_PID=''
     SPIN_RESTORE="${1:-}"
+    SPIN_LABEL="${2:-thinking}"
 
     # Piped output gets one static line instead of an animation: redrawing with
     # \r into a pipe produces a wall of repeated text, but printing nothing at
     # all would leave a session run over SSH with no sign it is working.
     if [ "${SPIN_TTY:-0}" -ne 1 ]; then
-        printf 'thinking...\n' >&2
+        printf '%s...\n' "$SPIN_LABEL" >&2
         return 0
     fi
 

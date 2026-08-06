@@ -31,6 +31,11 @@ config_defaults() {
     CFG_CONNECT_TIMEOUT='10'
     CFG_TIMEOUT='60'
 
+    # Only consulted by /update, and only needed for a fork whose repository is
+    # private. GitHub serves release metadata for a public repository without
+    # any credential at all.
+    CFG_GITHUB_TOKEN=''
+
     # Messages kept besides the system prompt, so five exchanges. Enough for
     # "and how much RAM does it have?" to resolve, without growing the request
     # until every reply costs more than the last.
@@ -74,6 +79,7 @@ config_load() {
     [ -z "${DPAD_HISTORY_MESSAGES:-}" ] || CFG_HISTORY_MESSAGES="$DPAD_HISTORY_MESSAGES"
     [ -z "${DPAD_STREAM:-}" ] || CFG_STREAM="$DPAD_STREAM"
     [ -z "${DPAD_REPLAY_MESSAGES:-}" ] || CFG_REPLAY_MESSAGES="$DPAD_REPLAY_MESSAGES"
+    [ -z "${DPAD_GITHUB_TOKEN:-}" ] || CFG_GITHUB_TOKEN="$DPAD_GITHUB_TOKEN"
 
     _config_validate
 }
@@ -111,6 +117,7 @@ _config_read_file() {
             history_messages) CFG_HISTORY_MESSAGES="$value" ;;
             stream) CFG_STREAM="$value" ;;
             replay_messages) CFG_REPLAY_MESSAGES="$value" ;;
+            github_token) CFG_GITHUB_TOKEN="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"

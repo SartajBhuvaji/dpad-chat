@@ -78,6 +78,8 @@ jobs:
           tests/release.sh
           tests/install.sh
           tests/stream.sh
+          tests/screen.sh
+          tests/update.sh
 
       - name: Build the archive
         run: python3 tools/package.py
@@ -109,8 +111,13 @@ jobs:
 
           ## Install
 
-          Unzip \`DPadChat-v$VERSION.zip\` onto the root of the SD card, so the app
-          lands in \`/mnt/SDCARD/App/DPadChat/\`. Then open **Apps > D-Pad Chat**.
+          Already running D-Pad Chat? Open it and type \`/update\`.
+
+          For a first install, unzip \`DPadChat-v$VERSION.zip\` onto the root of the
+          SD card, so the app lands in \`/mnt/SDCARD/App/DPadChat/\`. Then open
+          **Apps > D-Pad Chat**.
+
+          The \`.tar.gz\` is the same files; it is what \`/update\` downloads.
 
           Requires a Miyoo Mini **Plus** running Onion OS 4.x. The original Mini
           has no WiFi and is not supported.
@@ -127,7 +134,8 @@ jobs:
           gh release create "v$VERSION" \
             --title "v$VERSION" \
             --notes-file notes.md \
-            "dist/DPadChat-v$VERSION.zip"
+            "dist/DPadChat-v$VERSION.zip" \
+            "dist/DPadChat-v$VERSION.tar.gz"
 
           echo "### Released [v$VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION) (\`$KIND\`)" \
             >>"$GITHUB_STEP_SUMMARY"

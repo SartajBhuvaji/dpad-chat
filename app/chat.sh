@@ -30,6 +30,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/history.sh"
 # shellcheck source=lib/api.sh
 . "$APP_DIR/lib/api.sh"
+# shellcheck source=lib/update.sh
+. "$APP_DIR/lib/update.sh"
 
 DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
 API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
@@ -42,6 +44,7 @@ cmd_help() {
     ui_info '/help   this list'
     ui_info '/clear  start a new chat  (/c)'
     ui_info '/about  version and settings'
+    ui_info '/update check for a new version'
     ui_info '/quit   exit'
     printf '\n'
     ui_info 'Chats are kept when you close the app.'
@@ -114,6 +117,86 @@ cmd_new() {
     fi
 }
 
+# Checking is always safe; installing is not, so it never happens without an
+# answer at the prompt. What is downloaded is unpacked beside the app and left
+# there: the swap belongs to launch.sh, where nothing from the app directory is
+# running. See lib/update.sh for why that ordering is not optional.
+cmd_update() {
+    if update_is_pending; then
+        ui_info 'An update is already downloaded.'
+        ui_info 'Quit and reopen the app to finish it.'
+        return 0
+    fi
+
+    if ! net_has_route; then
+        ui_error 'No network. Connect to WiFi in Onion settings, then try again.'
+        return 0
+    fi
+
+    spin_start '' 'checking'
+    if update_check; then
+        found=1
+    else
+        found=0
+    fi
+    spin_stop
+
+    if [ "$found" -ne 1 ]; then
+        ui_error "$UPDATE_ERROR"
+        return 0
+    fi
+
+    if ! update_is_newer "$UPDATE_VERSION" "$DPADCHAT_VERSION"; then
+        ui_info "Up to date (v$DPADCHAT_VERSION)."
+        return 0
+    fi
+
+    printf '\n'
+    ui_info "New version available:"
+    ui_info "  v$DPADCHAT_VERSION  ->  v$UPDATE_VERSION"
+    printf '\n'
+
+    if ! chat_confirm 'Download and install it?'; then
+        ui_info 'Left as it is.'
+        return 0
+    fi
+
+    spin_start '' 'downloading'
+    if update_download_and_stage "$UPDATE_VERSION"; then
+        staged=1
+    else
+        staged=0
+    fi
+    spin_stop
+
+    if [ "$staged" -ne 1 ]; then
+        ui_error "$UPDATE_ERROR"
+        ui_info 'Nothing was changed.'
+        return 0
+    fi
+
+    printf '\n'
+    ui_info "v$UPDATE_VERSION is ready to install."
+    ui_info 'Quit and reopen D-Pad Chat to finish.'
+}
+
+# Reads the answer from the same stdin the REPL uses, so the on-screen keyboard
+# works here exactly as it does at the prompt. Anything other than yes is no,
+# including EOF: a closed pipe must not be read as consent to overwrite the app.
+chat_confirm() {
+    printf '\n%s%s [y/N] %s' "$C_USER" "$1" "$C_RESET"
+
+    if ! IFS= read -r answer; then
+        printf '\n'
+        return 1
+    fi
+
+    case "$answer" in
+        y | Y | yes | Yes | YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Redraw the tail of a resumed conversation. Without this the model would carry
 # context the user cannot see, and its replies would refer to things that are
 # not on screen.
@@ -162,6 +245,9 @@ dispatch_command() {
             ;;
         /about | /version)
             cmd_about
+            ;;
+        /update | /upgrade)
+            cmd_update
             ;;
         /quit | /exit | /q)
             RUNNING=0
@@ -322,6 +408,7 @@ main() {
     config_load "$DATA_DIR"
     history_init "$DATA_DIR" "$CFG_SYSTEM_PROMPT" ||
         die "Cannot write history to $DATA_DIR"
+    update_init "$APP_DIR" "$DATA_DIR" "$API_CACERT"
 
     ui_init
     screen_init

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""A scriptable stand-in for the chat completions endpoint.
+"""A scriptable stand-in for the chat completions endpoint and GitHub releases.
 
 Exists so the failure paths in the client are testable. A live API cannot be
 asked to return 429 on demand, and proving that word wrap works should not cost
 tokens. The scenario is chosen by the user message: send "scenario:unauthorized"
 and the server answers 401.
+
+It also answers the two GitHub endpoints /update uses, under
+``/updates/<scenario>/``, and serves a real tarball built in memory. Pointing
+the updater at a directory of fixtures would test the parsing and skip the part
+that actually breaks: the download and the unpack.
 
     tools/mockapi.py --port 8080
     tools/mockapi.py --port 0 --port-file /tmp/port   # ephemeral, for tests
@@ -16,10 +21,13 @@ the CI harness is a minimal Alpine image.
 from __future__ import annotations
 
 import argparse
+import gzip
+import io
 import json
 import pathlib
 import re
 import sys
+import tarfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,6 +52,62 @@ LONG_REPLY = (
     "Mini Plus, pairing two ARM Cortex-A7 cores at 1.2 GHz with 128 MB of "
     "on-package DDR3 memory."
 )
+
+
+# --- GitHub releases -------------------------------------------------------
+
+# What each update scenario publishes. The version is what the client compares
+# against its own; "none" and "no_asset" cover the two ways a check can succeed
+# at the HTTP level and still have nothing to install.
+UPDATE_SCENARIOS = {
+    "newer": "v99.0.0",
+    "older": "v0.0.1",
+    "unversioned": "nightly",
+    "no_asset": "v99.0.0",
+    "corrupt": "v99.0.0",
+    "traversal": "v99.0.0",
+    "incomplete": "v99.0.0",
+}
+
+# The file set a staged tree is checked against, mirroring tools/package.py.
+UPDATE_FILES = {
+    "config.json": b'{"label": "D-Pad Chat"}\n',
+    "launch.sh": b"#!/bin/sh\nexit 0\n",
+    "chat.sh": b"#!/bin/sh\nexit 0\n",
+    "apply-update.sh": b"#!/bin/sh\nexit 0\n",
+    "lib/common.sh": b"DPADCHAT_VERSION='99.0.0'\n",
+    "res/cacert.pem": b"# not a real bundle\n",
+    "res/icon.png": b"\x89PNG\r\n\x1a\n",
+}
+
+
+def _tarball(scenario: str) -> bytes:
+    """Build the release archive a scenario should serve."""
+    if scenario == "corrupt":
+        # Gzip magic followed by nothing that inflates, so the failure happens
+        # where a truncated download would put it.
+        return b"\x1f\x8b\x08\x00" + b"\x00" * 32
+
+    members = dict(UPDATE_FILES)
+    if scenario == "incomplete":
+        del members["lib/common.sh"]
+
+    prefix = "App/DPadChat"
+    raw = io.BytesIO()
+    with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+        with tarfile.open(fileobj=gz, mode="w") as tf:  # type: ignore[arg-type]
+            for name, payload in members.items():
+                arcname = f"{prefix}/{name}"
+                if scenario == "traversal":
+                    # The entry a hostile archive would carry: it unpacks
+                    # outside the directory tar was pointed at.
+                    arcname = f"{prefix}/../../../etc/{name}"
+                info = tarfile.TarInfo(arcname)
+                info.size = len(payload)
+                info.mode = 0o755 if name.endswith(".sh") else 0o644
+                info.mtime = 0
+                tf.addfile(info, io.BytesIO(payload))
+    return raw.getvalue()
 
 
 def _next_count(scenario: str) -> int:
@@ -72,8 +136,66 @@ def _error(message: str, err_type: str) -> dict:
     return {"error": {"message": message, "type": err_type, "code": None}}
 
 
+RELEASE_PATH = re.compile(r"^/updates/(?P<scenario>[^/]+)/repos/[^/]+/[^/]+/releases/latest$")
+ASSET_PATH = re.compile(r"^/updates/(?P<scenario>[^/]+)/assets/(?P<name>[A-Za-z0-9._-]+)$")
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def do_GET(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
+        release = RELEASE_PATH.match(self.path)
+        if release:
+            self._release(release.group("scenario"))
+            return
+
+        asset = ASSET_PATH.match(self.path)
+        if asset:
+            self._asset(asset.group("scenario"), asset.group("name"))
+            return
+
+        self._send_json(404, _error(f"Unknown path {self.path}", "not_found"))
+
+    def _release(self, scenario: str) -> None:
+        if scenario == "none":
+            # What GitHub returns for a repository with no releases, and for one
+            # the caller cannot see. The client cannot tell those apart either.
+            self._send_json(404, {"message": "Not Found"})
+            return
+
+        if scenario == "forbidden":
+            self._send_json(403, {"message": "Bad credentials"})
+            return
+
+        if scenario not in UPDATE_SCENARIOS:
+            self._send_json(404, {"message": f"Unknown update scenario '{scenario}'"})
+            return
+
+        base = f"http://{self.headers.get('Host', '127.0.0.1')}/updates/{scenario}/assets"
+
+        # The zip is always present, so a client that picks the wrong asset
+        # fails by downloading something it cannot unpack rather than by
+        # finding nothing at all.
+        assets = [{"name": "DPadChat.zip", "url": f"{base}/DPadChat.zip"}]
+        if scenario != "no_asset":
+            assets.insert(0, {"name": "DPadChat.tar.gz", "url": f"{base}/DPadChat.tar.gz"})
+
+        tag = UPDATE_SCENARIOS[scenario]
+        self._send_json(200, {"tag_name": tag, "name": tag, "assets": assets})
+
+    def _asset(self, scenario: str, name: str) -> None:
+        if scenario not in UPDATE_SCENARIOS:
+            self._send_json(404, {"message": "Not Found"})
+            return
+
+        # Only the tarball is real. A client that reached for the zip would
+        # otherwise unpack it happily and the asset choice would go untested.
+        body = _tarball(scenario) if name.endswith(".tar.gz") else b"PK\x03\x04not-a-tarball"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     # Quiet by default: the test suite drives this and its output is noise.
     def log_message(self, fmt: str, *args) -> None:

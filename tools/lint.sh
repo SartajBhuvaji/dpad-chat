@@ -47,6 +47,33 @@ else
     printf '  skipped: shellcheck not installed\n'
 fi
 
+printf '\nChecking executable bits\n'
+if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+    # Checkouts on a Windows filesystem silently drop the mode bit, which fails
+    # only once CI or the device tries to run the file. Assert on the index
+    # rather than the working tree, since the index is what gets pushed.
+    for entry in app/chat.sh app/launch.sh tests/smoke.sh tools/install.sh \
+        tools/lint.sh tools/simulate.sh tools/make_icon.py; do
+        mode=$(git ls-files -s -- "$entry" | cut -d' ' -f1)
+        case "$mode" in
+            100755)
+                printf '  ok    %s\n' "$entry"
+                ;;
+            '')
+                printf '  FAIL  %s (not tracked)\n' "$entry"
+                status=1
+                ;;
+            *)
+                printf '  FAIL  %s (mode %s, expected 100755)\n' "$entry" "$mode"
+                printf '        fix: git update-index --chmod=+x %s\n' "$entry"
+                status=1
+                ;;
+        esac
+    done
+else
+    printf '  skipped: not a git checkout\n'
+fi
+
 printf '\nChecking JSON\n'
 if command -v python3 >/dev/null 2>&1; then
     for json in app/config.json; do

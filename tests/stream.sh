@@ -134,44 +134,41 @@ assert_eq 'both streamed turns are recorded' "$(hist ctx 'length')" '5'
 # It actually streams
 # -----------------------------------------------------------------------------
 
-# The mock delays between events, so a reply of N chunks takes at least N * the
-# delay to finish. If the first token appeared only at the end, the gap between
-# the first byte on screen and the last would be near zero. Measuring that gap
-# is the only way to tell streaming from buffering.
-FIFO="$WORK_DIR/timing"
-: >"$FIFO"
+# Content assertions cannot tell streaming from buffering: a client that
+# collected the whole reply and printed it at the end would pass every one of
+# them. Only arrival timing distinguishes the two.
+#
+# tests/arrival.py counts bursts of bytes separated by a pause. The mock waits
+# between events, so a streaming client produces roughly one burst per event
+# and a buffered one produces a single burst for the reply.
 
-start=$(date +%s%N 2>/dev/null || printf '0')
-if [ "$start" != '0' ]; then
+bursts() {
     printf 'scenario:long\n/quit\n' | env \
         COLUMNS="$COLS" NO_COLOR=1 \
-        DPAD_DATA_DIR="$WORK_DIR/timing_d" \
+        DPAD_DATA_DIR="$WORK_DIR/$1" \
         DPAD_API_KEY='fixture-value-not-a-secret' \
         DPAD_BASE_URL="$MOCK_URL" \
-        DPAD_STREAM=true \
-        "$REPO_ROOT/app/chat.sh" 2>&1 |
-        while IFS= read -r _; do
-            printf '%s\n' "$(date +%s%N)" >>"$FIFO"
-        done
+        DPAD_STREAM="$2" \
+        "$REPO_ROOT/app/chat.sh" 2>/dev/null |
+        python3 "$REPO_ROOT/tests/arrival.py" --gap-ms 10
+}
 
-    first=$(head -n 1 "$FIFO" 2>/dev/null || printf '0')
-    last=$(tail -n 1 "$FIFO" 2>/dev/null || printf '0')
-
-    if [ "$first" != '0' ] && [ "$last" != '0' ]; then
-        spread_ms=$(((last - first) / 1000000))
-        # 30 chunks at 20 ms is roughly 600 ms of stream. Anything above 150 ms
-        # of spread means output was arriving while the response was still open.
-        if [ "$spread_ms" -ge 150 ]; then
-            pass "output arrives progressively (${spread_ms}ms spread)"
-        else
-            fail 'output arrives progressively' \
-                "only ${spread_ms}ms between first and last line; looks buffered"
-        fi
-    else
-        fail 'output arrives progressively' 'no timing samples captured'
-    fi
+streamed=$(bursts burst_on true)
+if [ "${streamed:-0}" -ge 5 ]; then
+    pass "output arrives progressively ($streamed bursts)"
 else
-    pass 'output arrives progressively (skipped: no nanosecond clock)'
+    fail 'output arrives progressively' \
+        "only $streamed burst(s); the reply looks buffered"
+fi
+
+# The control. Without it, a broken measurement that reported a high count for
+# everything would still show the test above as passing.
+buffered=$(bursts burst_off false)
+if [ "${buffered:-99}" -lt 5 ]; then
+    pass "the buffered path arrives in few bursts ($buffered)"
+else
+    fail 'the buffered path arrives in few bursts' \
+        "$buffered bursts; the measurement cannot tell the paths apart"
 fi
 
 # -----------------------------------------------------------------------------

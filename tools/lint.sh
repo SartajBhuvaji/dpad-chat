@@ -54,7 +54,7 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # rather than the working tree, since the index is what gets pushed.
     for entry in app/chat.sh app/launch.sh tests/smoke.sh tests/api.sh \
         tests/net.sh tests/history.sh tests/release.sh tests/install.sh \
-        tests/stream.sh \
+        tests/stream.sh tests/arrival.py \
         tools/install.sh \
         tools/lint.sh tools/simulate.sh tools/version.sh \
         tools/fetch-cacert.sh tools/make_icon.py tools/mockapi.py \

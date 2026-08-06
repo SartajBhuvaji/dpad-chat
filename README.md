@@ -81,6 +81,10 @@ turn.
 default of two exchanges fits the panel; the full retained history would push the prompt
 off the bottom before you had typed anything.
 
+`github_token` is optional and only touched by `/update`. This repository is public, so
+release metadata is served without any credential; set it only if you are running a fork
+whose repository is private, or if you hit GitHub's unauthenticated rate limit.
+
 `make install-key` writes this for you. Until M3 adds on-device entry, the alternative is
 to edit the file on the card by hand. Either way it is parsed against a whitelist of known
 keys rather than sourced, so nothing written in it is ever executed.
@@ -115,6 +119,7 @@ All of these come from `st` itself.
 | `/help` | list commands |
 | `/clear`, `/c` | start a new chat |
 | `/about` | version, width, model, TLS state, history size |
+| `/update` | check GitHub for a new version, and offer to install it |
 | `/quit` | exit |
 
 Chats are kept when you close the app. Reopening resumes where you left off and replays
@@ -123,6 +128,32 @@ the most recent turns, so the context the model still has is the context you can
 `/clear` is therefore destructive, and final — it is the only way to lose a chat, and no
 copy is kept anywhere. The screen goes blank and the conversation is gone, on disk as well
 as on screen.
+
+### Updating
+
+`/update` asks GitHub for the latest release and, if it is newer than what you are
+running, offers to install it. Nothing is downloaded until you answer, and nothing is
+installed until you relaunch:
+
+```
+New version available:
+  v0.6.1  ->  v0.7.0
+
+Download and install it? [y/N]
+```
+
+Answering yes unpacks the release into `data/update/` and stops there. The swap happens
+on the next launch, before the app starts. That ordering is not politeness — the shell
+reads a script incrementally from an open file descriptor, so overwriting `chat.sh` while
+it is running resumes the interpreter partway through different content.
+
+Your conversation and your settings live in `data/`, which the update never writes to.
+
+An archive is refused before it is unpacked if any path in it points outside the app, and
+refused after unpacking if a file the app needs is missing — replacing a working install
+with one that cannot start is not recoverable on a device whose only input is a D-pad.
+
+`/update` is manual. The app never phones home on its own.
 
 ## Development
 
@@ -183,9 +214,10 @@ app/            what gets copied to /mnt/SDCARD/App/DPadChat/
   config.json     Onion app manifest
   launch.sh       entry point; starts st with chat.sh inside it
   chat.sh         the REPL
+  apply-update.sh installs a staged update, run by launch.sh before anything else
   lib/            shared helpers: paths, logging, rendering, settings, client
   res/            icon and CA bundle
-tests/          smoke, API, preflight, and history tests
+tests/          smoke, API, preflight, history, screen and update tests
 tools/          lint, simulate, install, mock server, icon and CA fetchers
 ```
 
@@ -210,11 +242,20 @@ The key is never written to the log, never printed in full on screen — `/about
 redacted — and reaches curl through a mode-600 config file rather than the command line,
 where any other process could read it. All three are covered by tests.
 
+`/update` downloads code, so it is held to the same rule: verified against the bundled CA
+or not at all, `https` only, and `https` again after any redirect. It talks to
+GitHub and never sends your OpenAI key there. A `github_token` setting exists for forks
+whose repository is private; it travels the same mode-600 config file, and curl drops the
+header when a redirect crosses hosts, so it never reaches the CDN serving the file.
+
 ## Releases
 
 Every pull request carries exactly one label — `major`, `minor` or `patch` — and CI
 fails without it. On merge, the release workflow bumps `DPADCHAT_VERSION`, tags, and
-publishes an archive that unpacks onto an SD card.
+publishes two archives that unpack onto an SD card: a `.zip` for installing by hand from
+a desktop, and a `.tar.gz` for `/update`. Both hold the same files. The split is because
+busybox always has `tar` and `gzip`, while `unzip` is an optional applet that may not be
+on the device — and finding that out after the download is too late.
 
 `app/lib/common.sh` is the single source of truth for the version; tags and releases are
 derived from it, so a checkout at any commit reports the same version the app prints in

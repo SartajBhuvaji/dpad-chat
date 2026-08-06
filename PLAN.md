@@ -32,18 +32,22 @@ Repo (`dpad-chat/`) mirrors what lands on the SD card, so "install" is a folder 
 ```
 app/                          ->  /mnt/SDCARD/App/DPadChat/
 ├── config.json                   Onion app manifest
-├── launch.sh                     entry point: exec st -e chat.sh
+├── launch.sh                     entry point: applies a staged update, exec st -e chat.sh
 ├── chat.sh                       main REPL
+├── apply-update.sh               copies a staged tree over the app (§9, /update)
 ├── lib/
 │   ├── api.sh                    payload build + curl call + response parse
 │   ├── ui.sh                     word wrap, banner, spinner, colors
+│   ├── screen.sh                 pinned bars, waiting indicator
+│   ├── update.sh                 release check, download, stage
 │   └── config.sh                 settings load/save, first-run key entry
 ├── res/
 │   ├── icon.png                  app icon (~200x200, transparent PNG)
 │   └── cacert.pem                CA bundle (see §7)
 └── data/                         created at runtime, git-ignored
     ├── settings.cfg              API key, model, max_tokens
-    └── history.json              conversation as a JSON array
+    ├── history.json              conversation as a JSON array
+    └── update/                   staged release, waiting for the next launch
 tools/
 ├── install.sh                    copy app/ to a mounted SD card
 ├── simulate.sh                   run chat.sh on desktop for testing
@@ -332,6 +336,7 @@ The REPL never dies on a failed request — errors return to the prompt.
 | **M3** | First-run key entry, `settings.cfg`, slash commands | Fresh install is usable with no file editing |
 | **M4** | Robustness pass (§8) + clock sync + `--cacert` | Done. Verified TLS with no fallback, route and clock preflight |
 | **M5** | Streaming replies | Done. Tokens appear as generated; timing is asserted |
+| **M6** | `/update` from GitHub releases | Done. Checks, asks, stages; the swap happens at launch |
 
 Streaming landed last because it was the riskiest piece, and the risk was real: the
 device's busybox is 1.20.2 from 2019 and its `sed` has no `-u`, so the planned pipeline
@@ -354,6 +359,39 @@ and the prefix strip costs no process at all. The device's `jq` is 1.6 and suppo
 One trade-off: streamed text is not passed through `fold -s`, because `fold` would buffer
 for the same reason `sed` did. The terminal wraps instead, which can split a word. Set
 `stream = false` for the buffered path with clean wrapping.
+
+### Why `/update` cannot install itself
+
+The obvious shape — download, unpack over the app directory, tell the user to relaunch —
+corrupts the running session. `sh` reads a script incrementally from an open file
+descriptor rather than loading it whole, so rewriting `chat.sh` underneath itself makes
+the interpreter resume at a byte offset in different content. Overwriting `launch.sh` has
+the same problem one level up.
+
+So the work is split at the only safe seam:
+
+```
+chat.sh   /update    check, ask, download, unpack into data/update/, write `ready`
+                     (nothing outside data/ is touched)
+launch.sh next run   sees `ready`, exec's data/update/apply.sh  <- exec, so launch.sh
+                     is no longer being read from disk
+apply.sh             copies the staged tree over the app, exec's the new launch.sh
+```
+
+`apply.sh` runs from a copy inside `data/update/`, which is the one directory the copy
+never writes to — `tools/package.py` excludes `data/` from the archive, which is also what
+keeps a user's key and transcript through an update.
+
+Three refusals, in the order they can be checked:
+
+- any archive entry outside `App/DPadChat/`, or containing `..`, before unpacking;
+- a staged tree missing a file the app sources, before `ready` is written;
+- the same check again at apply time, because the card may have been pulled in between.
+
+The `ready` marker is consumed *before* the copy starts. A copy that fails halfway leaves
+a broken install that still boots into the old launcher; a marker left in place would
+leave the launcher retrying a failing copy forever, and there is no shell on the device to
+break that loop with.
 
 ---
 
@@ -448,6 +486,12 @@ The keyboard is validated on hardware; everything else is validated in the conta
    startup and degrades on its own, so this only confirms which of the two is in use.
 8. Do `ESC [ 30;43m` (black on yellow) and `ESC [ 30;47m` (black on white) render legibly
    on the panel, and does the terminal clear the background to the end of the row?
+9. Does the update hand-off actually complete on hardware? `apply-update.sh` is tested
+   directly, but the `exec` chain it sits in — Onion runs `launch.sh`, which `exec`s the
+   installer, which `exec`s the new `launch.sh`, which starts `st` — has only been
+   exercised where `st` is absent. This is the one part of `/update` that no test covers.
+10. Is `/mnt/SDCARD` writable by the launcher at that point in the boot, and does the card
+   have room for a second copy of the app (~150 KB) while it is being staged?
 
 ---
 

@@ -45,6 +45,9 @@ jobs:
       - name: Status bars and waiting indicator
         run: tests/screen.sh
 
+      - name: Update tests
+        run: tests/update.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

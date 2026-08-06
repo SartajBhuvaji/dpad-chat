@@ -1,0 +1,6 @@
+{
+  "label": "D-Pad Chat",
+  "icon": "res/icon.png",
+  "launch": "launch.sh",
+  "description": "Chat with GPT over WiFi"
+}

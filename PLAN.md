@@ -1,0 +1,470 @@
+# D-Pad Chat — v1 Plan
+
+A ChatGPT client for Onion OS on the Miyoo Mini+, built as a POSIX shell script running
+inside Onion's bundled `st` terminal (which supplies the on-screen keyboard for free).
+
+**Target:** Miyoo Mini **Plus** only. The original Miyoo Mini has no WiFi, so it is out of
+scope — v1 will detect the absence of a network interface and show a clear message rather
+than pretend to work.
+
+---
+
+## 1. Why shell + `st`
+
+Everything needed already ships with Onion OS, so v1 requires no cross-compiler:
+
+| Need | Provided by Onion at `/mnt/SDCARD/.tmp_update/` |
+|---|---|
+| HTTPS requests | `bin/curl`, `lib/libcurl.so.4`, `lib/libssl.so.3` |
+| JSON build/parse | `bin/jq` |
+| On-screen keyboard | `bin/st` — **X** toggles it show/hide |
+| Clock sync (TLS needs it) | `bin/ntpdate` |
+
+The native-SDL route (`lib/libkbinput.so` → `launch_keyboard()`) is deliberately deferred
+to v2. It buys a nicer UI at the cost of a Docker toolchain and a build step.
+
+---
+
+## 2. Package layout
+
+Repo (`dpad-chat/`) mirrors what lands on the SD card, so "install" is a folder copy:
+
+```
+app/                          ->  /mnt/SDCARD/App/DPadChat/
+├── config.json                   Onion app manifest
+├── launch.sh                     entry point: exec st -e chat.sh
+├── chat.sh                       main REPL
+├── lib/
+│   ├── api.sh                    payload build + curl call + response parse
+│   ├── ui.sh                     word wrap, banner, spinner, colors
+│   └── config.sh                 settings load/save, first-run key entry
+├── res/
+│   ├── icon.png                  app icon (~200x200, transparent PNG)
+│   └── cacert.pem                CA bundle (see §7)
+└── data/                         created at runtime, git-ignored
+    ├── settings.cfg              API key, model, max_tokens
+    └── history.json              conversation as a JSON array
+tools/
+├── install.sh                    copy app/ to a mounted SD card
+├── simulate.sh                   run chat.sh on desktop for testing
+└── mockapi.py                    scripted fake OpenAI endpoint (see §10)
+Dockerfile                        Alpine test harness
+docker-compose.yml                app + mockapi
+```
+
+`config.json`, matching the format Onion's own Terminal app uses:
+
+```json
+{
+  "label": "D-Pad Chat",
+  "icon": "res/icon.png",
+  "launch": "launch.sh",
+  "description": "Chat with GPT over WiFi"
+}
+```
+
+`launch.sh` wires up Onion's bin/lib paths and hands off to the terminal:
+
+```sh
+#!/bin/sh
+APPDIR=$(dirname "$0")
+sysdir=/mnt/SDCARD/.tmp_update
+export PATH="$sysdir/bin:$PATH"
+export LD_LIBRARY_PATH="$sysdir/lib:$LD_LIBRARY_PATH"
+cd "$sysdir"
+HOME=/mnt/SDCARD ./bin/st -e "$APPDIR/chat.sh"
+```
+
+---
+
+## 3. Controls
+
+Inherited from `st`'s keyboard (`keyboard.c`), no work on our side:
+
+| Button | Action |
+|---|---|
+| **X** | toggle keyboard on/off — the headline feature |
+| D-pad | move key cursor |
+| **A** | press key |
+| **B** | sticky-toggle a key (shift, ctrl) |
+| **L1 / R1** | shift / backspace |
+| **Y** | move keyboard between top and bottom |
+| **Start** | Enter — sends the message |
+| **Select** | quit `st`, exits the app |
+
+---
+
+## 4. On-device mockups
+
+Drawn at **40 columns × 30 rows**, the likely grid for `st`'s doubled 8×8 pixel font on a
+640×480 panel. This is an estimate — the real count is open question #2 in §11, and every
+wrap width below shifts with it. Frames are cropped vertically to the interesting part.
+
+### 4.1 Onion Apps menu
+
+D-Pad Chat is just another entry in the carousel once the folder is on the card:
+
+```
+┌────────────────────────────────────────┐
+│                                  12:34 │
+│                                        │
+│     .------.  .========.  .------.     │
+│     | [=]  |  || >_   ||  | (o)  |     │
+│     '------'  '========'  '------'     │
+│                                        │
+│     Tweaks     D-Pad Chat    Music     │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+### 4.2 First run — API key entry
+
+Shown once, when `settings.cfg` has no key. Keyboard comes up automatically here:
+
+```
+┌────────────────────────────────────────┐
+│ D-Pad Chat -- first run                │
+│----------------------------------------│
+│                                        │
+│ Paste your OpenAI API key.             │
+│ Press X for the keyboard, Start to     │
+│ confirm.                               │
+│                                        │
+│ key> sk-****************               │
+│                                        │
+│----------------------------------------│
+│  ` 1 2 3 4 5 6 7 8 9 0 - =  BKSP       │
+│   q w e r t y u i o p [ ] \            │
+│   a s d f g h j k l ; '  ENTER         │
+│   z x c v b n m , . /   SHIFT          │
+│        [    SPACE    ]                 │
+└────────────────────────────────────────┘
+```
+
+### 4.3 Launch banner, keyboard hidden
+
+```
+┌────────────────────────────────────────┐
+│ D-Pad Chat            gpt-4o-mini      │
+│----------------------------------------│
+│ X keyboard  Start send  Select quit    │
+│ /help for commands                     │
+│                                        │
+│ >                                      │
+│                                        │
+│                                        │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+### 4.4 Typing — keyboard shown (press X)
+
+The overlay eats the bottom half, leaving ~9 rows of scrollback. This is exactly why the
+toggle matters: you type with it up, then hide it to read.
+
+```
+┌────────────────────────────────────────┐
+│ D-Pad Chat            gpt-4o-mini      │
+│----------------------------------------│
+│                                        │
+│ > what is a miyoo mini                 │
+│                                        │
+│ It's a small Linux handheld for retro  │
+│ games, running a 1.2 GHz ARM chip with │
+│ 128 MB of RAM.                         │
+│                                        │
+│ > how much ram does th                 │
+│----------------------------------------│
+│  ` 1 2 3 4 5 6 7 8 9 0 - =  BKSP       │
+│   q w e r t y u i o p [ ] \            │
+│   a s d f g[h]j k l ; '  ENTER         │
+│   z x c v b n m , . /   SHIFT          │
+│        [    SPACE    ]                 │
+└────────────────────────────────────────┘
+```
+
+`[h]` marks the D-pad cursor; **A** presses it, **Start** sends the line.
+
+### 4.5 Waiting on a reply
+
+Non-streaming v1 shows a spinner so the device never looks frozen:
+
+```
+┌────────────────────────────────────────┐
+│ > explain the SSD202D chip             │
+│                                        │
+│ thinking... (-)                        │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+Once M5 lands, this is replaced by text appearing token by token.
+
+### 4.6 Reading a reply — keyboard hidden (press X again)
+
+Full 30 rows for output, wrapped to the terminal width by `fold -s`:
+
+```
+┌────────────────────────────────────────┐
+│ D-Pad Chat            gpt-4o-mini      │
+│----------------------------------------│
+│                                        │
+│ > explain the SSD202D chip             │
+│                                        │
+│ The SigmaStar SSD202D is the system-   │
+│ on-chip inside the Miyoo Mini and      │
+│ Mini+. It pairs two ARM Cortex-A7      │
+│ cores at 1.2 GHz with 128 MB of        │
+│ on-package DDR3, which is why the      │
+│ handheld tops out around PS1-era       │
+│ emulation.                             │
+│                                        │
+│ >                                      │
+│                                        │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+### 4.7 Error state
+
+Every failure in §8 renders in this shape — plain, and it returns you to the prompt
+rather than dumping you back to the menu:
+
+```
+┌────────────────────────────────────────┐
+│ D-Pad Chat                             │
+│----------------------------------------│
+│                                        │
+│  !  No network.                        │
+│                                        │
+│  Connect to WiFi from Onion's          │
+│  settings, then relaunch.              │
+│                                        │
+│  Select = quit                         │
+│                                        │
+└────────────────────────────────────────┘
+```
+
+---
+
+## 5. Chat loop
+
+```
+startup
+  ├─ load settings; if no API key -> first-run prompt, save with chmod 600
+  ├─ if system year < 2024 -> ntpdate sync (TLS fails on a wrong clock)
+  ├─ check network; no interface/route -> friendly error, exit
+  └─ print banner + control hints
+
+repl
+  ├─ printf "\n> " ; IFS= read -r line
+  ├─ slash commands: /help /clear /model /key /quit
+  ├─ append {role:user} to history.json
+  ├─ build payload with jq  (never string-interpolate user text)
+  ├─ POST api.openai.com/v1/chat/completions
+  ├─ print reply word-wrapped to terminal width
+  ├─ append {role:assistant} to history.json
+  └─ trim history to system + last 10 messages
+```
+
+Payload is assembled by `jq` so quotes and newlines in user input can't break the JSON:
+
+```sh
+jq -n --arg model "$MODEL" --argjson msgs "$(cat "$HISTORY")" \
+      --argjson max "$MAX_TOKENS" \
+      '{model:$model, messages:$msgs, max_tokens:$max}'
+```
+
+History trimming keeps the system prompt pinned at index 0:
+
+```sh
+jq '.[0:1] + (.[1:] | .[-10:])' "$HISTORY"
+```
+
+**RAM and screen budget.** 128 MB total and a 640×480 pixel font mean long replies are
+painful. v1 ships a system prompt of *"Answer concisely. Stay under 120 words unless the
+user asks for detail."* plus `max_tokens: 512`, both overridable in `settings.cfg`.
+
+---
+
+## 6. Response rendering
+
+Reply text goes through `fold -s -w "$COLS"` where `COLS` is detected once at startup
+(`stty size`, falling back to a constant measured on-device). The keyboard overlay covers
+part of the screen when shown, which is exactly why X-to-hide matters for reading.
+
+---
+
+## 7. TLS, and why we don't use `curl -k`
+
+Onion has **no CA bundle** — its own scripts (`ota_update.sh`, the scraper) all call
+`curl -k`. That is acceptable for fetching public release metadata. It is not acceptable
+here, because every request carries a bearer token; `-k` makes the API key trivially
+interceptable on hostile WiFi.
+
+v1 ships `res/cacert.pem` (Mozilla bundle from curl.se) and always passes `--cacert`.
+If verification fails, the app reports it and stops rather than silently downgrading.
+
+---
+
+## 8. Error handling
+
+| Condition | Behavior |
+|---|---|
+| No WiFi / no route | "No network. Connect WiFi in Onion settings first." exit |
+| Clock skewed | auto `ntpdate`; if that fails, explain the TLS implication |
+| HTTP 401 | "Invalid API key" + offer `/key` to re-enter |
+| HTTP 429 / 5xx | show status, retry once with backoff, then return to prompt |
+| Malformed JSON | show raw first 200 chars, keep session alive |
+| `curl` non-zero | surface exit code and message, never a silent empty reply |
+
+The REPL never dies on a failed request — errors return to the prompt.
+
+---
+
+## 9. Milestones
+
+| # | Deliverable | Done when |
+|---|---|---|
+| **M0** | Package scaffold + `config.json` + icon | "D-Pad Chat" appears in Onion's Apps menu and launches `st` |
+| **M1** | Hardcoded round trip | One canned prompt returns a real completion on-device |
+| **M2** | Interactive REPL + history + trimming | Multi-turn conversation with context holds up |
+| **M3** | First-run key entry, `settings.cfg`, slash commands | Fresh install is usable with no file editing |
+| **M4** | Robustness pass (§8) + clock sync + `--cacert` | Every row of the error table verified by hand |
+| **M5** | Streaming replies | Tokens appear progressively (see below) |
+
+Streaming lands last because it's the riskiest piece. Approach — one `jq` process for the
+whole stream, not one per token, which would crawl on a 1.2 GHz A7:
+
+```sh
+curl -N ... | sed -u -e '/^data: \[DONE\]/d' -n -e 's/^data: //p' \
+            | jq -j --unbuffered '.choices[0].delta.content // empty'
+```
+
+If busybox `sed -u` or `jq --unbuffered` misbehave on-device, v1 ships non-streaming and
+streaming moves to v1.1. M0–M4 is a complete, shippable app on its own.
+
+---
+
+## 10. Testing
+
+**v1 has no compile step.** The scripts call `curl`, `jq` and `st`, all of which already
+live on the device. So Docker is not a cross-compiler here — it is a *device-shaped
+runtime* that lets us reproduce the Miyoo's constraints on a laptop. The cross-compile
+pipeline becomes real at v2 (§13).
+
+Three tiers, fastest first. Most bugs die at L0.
+
+### L0 — desktop, no container (seconds per iteration)
+
+```sh
+dash -n app/chat.sh && shellcheck -s sh app/*.sh app/lib/*.sh
+DPAD_SIM=1 COLUMNS=40 tools/simulate.sh
+```
+
+`DPAD_SIM=1` redirects `/mnt/SDCARD` to a local fixture tree. Catches logic errors, `jq`
+filter mistakes, and wrap behavior. No hardware, no container.
+
+### L1 — Docker, device-shaped (the tier worth building)
+
+Base on **Alpine, not Ubuntu**: Alpine ships busybox + musl, which is far closer to the
+Miyoo's userland than glibc Ubuntu. Bashisms that Ubuntu's `/bin/sh` silently tolerates
+fail here, which is the entire point.
+
+```dockerfile
+FROM alpine:3.19
+RUN apk add --no-cache jq curl dash shellcheck
+COPY app/ /mnt/SDCARD/App/DPadChat/
+ENV COLUMNS=40 LINES=30 DPAD_SIM=1
+ENTRYPOINT ["/bin/busybox", "ash"]
+```
+
+Paired with a **mock API** (`tools/mockapi.py`, a stdlib `http.server`) that returns
+canned responses on demand:
+
+```
+docker compose up
+  ├─ mockapi   :8080   scripted 200 / 401 / 429 / 500 / truncated-JSON / slow-stream
+  └─ app               chat.sh with BASE_URL=http://mockapi:8080
+```
+
+This is the real payoff. Every row of the §8 error table becomes a deterministic test
+instead of something you hope never happens — you cannot ask the live API to return 429
+on cue, and you shouldn't burn tokens proving that word wrap works. It also makes the M5
+streaming work testable: the mock can dribble SSE chunks with delays.
+
+Caveat: Alpine's busybox and `jq` are *not* the device's builds. L1 raises confidence in
+our logic; it cannot answer open questions #3 and #5 in §11. Those need L2.
+
+### L2 — real hardware over SSH
+
+Enable dropbear in Onion's Tweaks, then:
+
+```sh
+rsync -av app/ root@<miyoo-ip>:/mnt/SDCARD/App/DPadChat/
+ssh root@<miyoo-ip> /mnt/SDCARD/App/DPadChat/chat.sh
+```
+
+Running `chat.sh` directly over SSH exercises everything except the `st` keyboard, and
+iterates in seconds. Reseat the SD card only for the final check that the app appears in
+the menu and the keyboard behaves. Settle §11's open questions here, at M0/M1, before
+writing rendering code against a guessed column count.
+
+### What Docker deliberately does *not* do
+
+Emulate the device. There is no Miyoo Mini emulator, and running `st` under QEMU would
+mean standing up a framebuffer for a component we did not write and are not changing.
+The keyboard is validated on hardware; everything else is validated in the container.
+
+---
+
+## 11. Open questions to settle on-device
+
+1. Does `config.json` accept an icon path **relative to the app folder** (`res/icon.png`),
+   or must it point into `/mnt/SDCARD/Icons/` the way built-in apps do?
+2. Exact terminal column/row count `st` reports at 640×480 — every mockup in §4 assumes
+   40×30, and the wrap width in §6 depends on it.
+3. Does busybox `sed` support `-u`, and does the device `jq` support `--unbuffered`?
+4. Does `st -e` need an absolute path, and does **Select**-to-quit exit cleanly enough to
+   return to the Onion menu without a stuck process?
+5. Does the bundled `curl` negotiate TLS 1.3 with `api.openai.com`, and does it honor
+   `--cacert` with a current Mozilla bundle?
+
+---
+
+## 12. Security notes
+
+- The API key lives in plaintext on a FAT32 SD card. FAT has no permission bits, so
+  `chmod 600` is advisory at best — anyone with the card has the key. This will be stated
+  in the README, and `/key` will support clearing it.
+- `data/` is git-ignored so a key never reaches the repo.
+- Keys are set an OpenAI usage limit, per the README's setup instructions.
+
+---
+
+## 13. Out of scope for v1
+
+Native SDL UI via `libkbinput`, conversation persistence across launches, multiple saved
+chats, image input, alternate providers, and any support for the non-WiFi original Mini.
+
+### The v2 cross-compile pipeline, for reference
+
+When the native UI happens, the toolchain step appears — with three corrections worth
+recording now:
+
+- **SDL 1.2, not SDL2.** Onion's own Makefiles link `-lSDL -lSDL_ttf -lSDL_image
+  -lSDL_rotozoom`. There is no SDL2 on this device.
+- **Don't build an Ubuntu + ARM-GCC image by hand.** Onion's Makefile uses
+  `aemiii91/miyoomini-toolchain:latest`, which already carries the cross-compiler, SDL 1.2,
+  libcurl and OpenSSL built for the target.
+- **There is no `.onion` package format.** Onion apps are plain folders under
+  `/mnt/SDCARD/App/`; a release is just a zip of that folder.
+
+```
+aemiii91/miyoomini-toolchain  ->  make (armv7ve, cortex-a7, neon-vfpv4, hard-float)
+                              ->  dpadchat binary + libkbinput.so
+                              ->  zip the App/DPadChat/ folder
+                              ->  unzip to SD card  ->  Miyoo Mini+
+```
+
+Even then, the shell version stays as the fallback path and the reference implementation.

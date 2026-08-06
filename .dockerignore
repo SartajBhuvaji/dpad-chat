@@ -1,0 +1,14 @@
+# Keep the build context small and the image reproducible. Git metadata is
+# excluded deliberately: the exec-bit check in tools/lint.sh reads the git
+# index, which is meaningless inside the container, so it skips there and runs
+# on the host and in the dedicated CI job instead.
+.git/
+.github/
+
+app/data/
+*.log
+*.log.1
+
+__pycache__/
+*.py[cod]
+.venv/

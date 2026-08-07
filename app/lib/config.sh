@@ -57,6 +57,20 @@ config_defaults() {
     # worth repeating - or, later, one worked out from what is being played -
     # has somewhere to come from.
     CFG_SUGGEST=''
+
+    # Offered instead when no `suggest` is set and Onion's recently-played list
+    # names a game. `{game}` is where the name goes; an empty value turns the
+    # whole of it off.
+    #
+    # A hyphen rather than a dash, and no question after it: what follows is
+    # the user's own words, and the opening exists to save them typing the part
+    # that is the same every time.
+    CFG_SUGGEST_GAME="I'm playing {game} -"
+
+    # Strip trailing bracketed groups - "(USA, Europe)", "[!]" - from the name.
+    # They are metadata rather than title and read as noise in a sentence. Off
+    # for a title that legitimately ends in brackets.
+    CFG_SUGGEST_STRIP_TAGS='true'
 }
 
 # -----------------------------------------------------------------------------
@@ -88,6 +102,9 @@ config_load() {
     [ -z "${DPAD_REPLAY_MESSAGES:-}" ] || CFG_REPLAY_MESSAGES="$DPAD_REPLAY_MESSAGES"
     [ -z "${DPAD_GITHUB_TOKEN:-}" ] || CFG_GITHUB_TOKEN="$DPAD_GITHUB_TOKEN"
     [ -z "${DPAD_SUGGEST:-}" ] || CFG_SUGGEST="$DPAD_SUGGEST"
+    [ -z "${DPAD_SUGGEST_GAME:-}" ] || CFG_SUGGEST_GAME="$DPAD_SUGGEST_GAME"
+    [ -z "${DPAD_SUGGEST_STRIP_TAGS:-}" ] ||
+        CFG_SUGGEST_STRIP_TAGS="$DPAD_SUGGEST_STRIP_TAGS"
 
     _config_validate
 }
@@ -127,6 +144,8 @@ _config_read_file() {
             replay_messages) CFG_REPLAY_MESSAGES="$value" ;;
             github_token) CFG_GITHUB_TOKEN="$value" ;;
             suggest) CFG_SUGGEST="$value" ;;
+            suggest_game) CFG_SUGGEST_GAME="$value" ;;
+            suggest_strip_tags) CFG_SUGGEST_STRIP_TAGS="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"
@@ -154,6 +173,14 @@ _config_validate() {
         *)
             log_warn "stream must be true or false, got '$CFG_STREAM'; using true"
             CFG_STREAM='true'
+            ;;
+    esac
+
+    case "$CFG_SUGGEST_STRIP_TAGS" in
+        true | false) ;;
+        *)
+            log_warn "suggest_strip_tags must be true or false, got '$CFG_SUGGEST_STRIP_TAGS'; using true"
+            CFG_SUGGEST_STRIP_TAGS='true'
             ;;
     esac
 

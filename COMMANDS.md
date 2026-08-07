@@ -4,6 +4,8 @@ Everything you can type, press, or configure.
 
 - [Slash commands](#slash-commands)
 - [Controls](#controls)
+- [Editing what you type](#editing-what-you-type)
+- [Suggested openings](#suggested-openings)
 - [The status bar](#the-status-bar)
 - [Settings](#settings)
 - [Environment overrides](#environment-overrides)
@@ -179,17 +181,19 @@ a new chat but leaves the recall list alone; closing the app empties it.
 
 ## Suggested openings
 
-If `suggest` is set, the first prompt of a session comes up already holding it, greyed
-out:
+Press **Menu** while playing, open D-Pad Chat, and the prompt is already holding this,
+greyed out:
 
 ```
-> I'm playing Chrono Trigger.
+> I'm playing Road Rash -
 ```
 
 That text is not in your message. **Right** takes it, leaves a space after it, and puts
-the cursor there so you carry straight on typing. **Any other key** takes it away and is
-then handled normally — so if you had something else to ask, just start typing it and the
-suggestion is gone.
+the cursor there so you carry straight on typing — *"I'm playing Road Rash - how do I
+beat the last race"*. **Any other key** takes it away and is then handled normally, so if
+you had something else to ask, just start typing and the suggestion is gone.
+
+Then press **Menu** again and your game is still there, where you left it.
 
 It is offered once, at the first prompt. By the second there is a conversation under way,
 and the same sentence again would only be in the way.
@@ -199,6 +203,41 @@ is the entire point of it.
 
 Nothing is ever sent that you did not either type or accept, which is what makes a
 suggestion you did not want cost exactly one keypress.
+
+### Where the game name comes from
+
+Onion keeps a list of what you have opened recently, at `Roms/recentlist.json`. The app
+reads the most recent entry that is a game rather than an app, and uses the name Onion
+itself displays.
+
+That file is only ever **read**, never written. If a future Onion moves it, renames it or
+changes its shape, you lose the suggestion — not the app.
+
+There is no way to tell *"a game is loaded right now"* from *"a game was played last
+week"*; the entry looks the same either way. That would matter a great deal if the name
+were fed to the model silently. It is not: it is ghost text that does nothing until you
+press **Right**, so a stale suggestion costs one keypress, the same as any other
+suggestion you did not want.
+
+### Wording it yourself
+
+| Setting | What it does |
+| --- | --- |
+| `suggest` | a fixed opening. Set it and it wins outright — the game is not consulted |
+| `suggest_game` | the template the game's name goes into. Empty turns game awareness off |
+| `suggest_strip_tags` | whether `Road Rash (USA, Europe)` becomes `Road Rash` |
+
+```ini
+suggest_game = Playing {game}. Keep it short -
+```
+
+`{game}` is where the name goes; the first one is replaced. A template with no `{game}` in
+it is used as-is whenever a game is found, which is a way to have a fixed opening that
+only appears when you have been playing something.
+
+The name must be printable ASCII by the time it reaches the prompt, because the cursor
+maths at the prompt counts characters as columns. A title with an accent in it is dropped
+rather than mangled, and the prompt comes up plain.
 
 ---
 
@@ -242,7 +281,7 @@ timeout = 60
 history_messages = 10
 replay_messages = 4
 stream = true
-suggest = I'm playing Chrono Trigger.
+suggest_game = I'm playing {game} -
 ```
 
 | Key | Default | What it does |
@@ -257,7 +296,9 @@ suggest = I'm playing Chrono Trigger.
 | `history_messages` | `10` | messages resent each turn, besides the system prompt |
 | `replay_messages` | `4` | messages redrawn on screen when a chat resumes |
 | `stream` | `true` | show the reply as it is generated |
-| `suggest` | *(none)* | an opening offered at the first prompt; see above |
+| `suggest` | *(none)* | a fixed opening offered at the first prompt; see above |
+| `suggest_game` | `I'm playing {game} -` | the opening used when a game was just played |
+| `suggest_strip_tags` | `true` | drop `(USA, Europe)` and the like from the game's name |
 | `github_token` | *(none)* | only used by `/update`; see below |
 
 Lines beginning with `#` are comments. Spaces around the `=` are fine. Unknown keys are
@@ -283,11 +324,12 @@ lets the terminal wrap, which can split a word across lines. `false` wraps clean
 boundaries, at the cost of a five-to-ten-second freeze with nothing on screen — and the
 device gives no other sign that it is working.
 
-**`suggest`** must be printable ASCII. The cursor arithmetic at the prompt counts
-characters as columns, which accented or non-Latin text breaks, and a control character
-would be an escape sequence the terminal obeys rather than text it draws. Anything else is
-ignored and the prompt comes up plain. Trailing spaces are trimmed off every value in this
-file, but you do not need one: accepting a suggestion adds the space itself.
+**`suggest`** must be printable ASCII, and so must the sentence `suggest_game` builds. The
+cursor arithmetic at the prompt counts characters as columns, which accented or non-Latin
+text breaks, and a control character would be an escape sequence the terminal obeys rather
+than text it draws. Anything else is ignored and the prompt comes up plain. Trailing
+spaces are trimmed off every value in this file, but you do not need one: accepting a
+suggestion adds the space itself.
 
 **`github_token`** is optional and only touched by `/update`. This repository is public, so
 release metadata is served with no credential at all. Set it only if you are running a
@@ -310,6 +352,8 @@ points the app at a mock server without writing a file.
 | `DPAD_REPLAY_MESSAGES` | `replay_messages` |
 | `DPAD_STREAM` | `stream` |
 | `DPAD_SUGGEST` | `suggest` |
+| `DPAD_SUGGEST_GAME` | `suggest_game` |
+| `DPAD_SUGGEST_STRIP_TAGS` | `suggest_strip_tags` |
 | `DPAD_GITHUB_TOKEN` | `github_token` |
 | `DPAD_DATA_DIR` | where `data/` lives |
 | `DPAD_CACERT` | the CA bundle path |

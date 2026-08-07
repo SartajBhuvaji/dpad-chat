@@ -627,6 +627,14 @@ else
 
     unset NO_COLOR
 
+    # An invisible ghost that still costs a keystroke to dismiss. This is what
+    # a template emptied out to turn the feature off arrives as.
+    DRIVER_SUGGEST='   '
+    export DRIVER_SUGGEST
+
+    keys '\033[Cx\r'
+    assert_eq 'a suggestion of nothing but spaces is refused' "$KEYS_LINE" 'x'
+
     DRIVER_SUGGEST=''
     export DRIVER_SUGGEST
 

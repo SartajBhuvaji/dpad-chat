@@ -37,9 +37,10 @@ again so you can read.
   freeze.
 - **Conversations persist** — close the app and reopen it; the chat resumes where you
   left off.
-- **Suggested openings** — a `suggest` line in your settings comes up as ghost text at the
-  first prompt. **Right** takes it; any other key takes it away. Forty characters is two
-  hundred button presses on a d-pad.
+- **Knows what you were playing** — press **Menu** out of a game, open the app, and the
+  prompt is already holding *"I'm playing Road Rash -"* in grey. **Right** takes it, any
+  other key takes it away, and **Menu** puts you back in the game where you left it. Forty
+  characters is two hundred button presses on a d-pad.
 - **Verified TLS, no fallback** — ships its own CA bundle and refuses to send your key
   over a connection it could not verify.
 - **Updates itself** — `/update` checks GitHub, asks first, installs on the next launch.

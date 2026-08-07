@@ -422,8 +422,56 @@ handled as though it had never been there.
   by whoever sets it. The REPL sets one before its first prompt and never again: by the
   second there is a conversation under way that the same sentence would only interrupt.
 
-Where the text comes from is deliberately not the editor's business. Today it is the
-`suggest` setting; stage B changes the source, not the behaviour.
+Where the text comes from is deliberately not the editor's business — see §5.3.
+
+### 5.3 Knowing what was played
+
+Onion already switches from a running game to an App when Menu is pressed, and the game is
+still there when you come back. The whole mechanism for reaching this app mid-game
+therefore exists and is somebody else's code to maintain. What is left is noticing which
+game it was, which is a file read.
+
+`app/lib/game.sh` reads `Roms/recentlist.json` — newline-delimited JSON, one object per
+line, which `jq` takes natively with no flags. The path is derived from `ONION_SYSDIR`
+rather than naming `/mnt/SDCARD`, so one variable aims both the app and the tests at a
+card.
+
+**Apps are in that list too, this one among them.** Reading "the most recent entry" would
+give a game or would give us back, depending on nothing more interesting than what was
+opened last. Games carry `rompath` and apps do not, so that is the discriminator — and
+being a property of the entry rather than of its position, it is right whichever order
+Onion writes them in. It is a better one than `type`, which is 5 against 3 in the sample
+but is a number whose meaning we would be guessing at.
+
+**Nothing distinguishes "a game is loaded right now" from "a game was played last week".**
+The documented `.tmp_update/cmd_to_run.sh` that would have said so was not on the card even
+when a game was running, so it is not in the design. That gap would matter a great deal if
+the name were fed to the model silently — it is not. It is ghost text that does nothing
+until Right is pressed, so a stale suggestion costs one dismissal, the same as any other
+suggestion that was not wanted. **The interaction absorbs the uncertainty**, which is why
+the missing signal never had to be found.
+
+**Read-only, and quiet about failure.** The file is Onion's working state, not a published
+interface: a future version may move, rename or reshape it. Every failure — absent,
+unreadable, a directory, not JSON, truncated mid-write, no games in it — returns nothing
+rather than an error, so an Onion update can at worst take the suggestion away and leave
+the app being the app. Nothing is written, so there is nothing to leave behind or conflict
+with, and no version of Onion is required.
+
+**Trailing bracketed groups are stripped from the name**, because `Road Rash (USA,
+Europe)` is a filename and `Road Rash` is a game. Repeatedly, from the end only, and never
+down to nothing. The risk is a title that legitimately ends in brackets, which is what
+`suggest_strip_tags` is for.
+
+Precedence is `suggest` first, as the user's own words, then the game. The template is
+substituted by parameter expansion rather than `sed`: the name comes off a card and would
+otherwise have to be escaped against a regex, and getting that wrong on somebody's ROM
+title is the sort of failure that does not show up until it does.
+
+`tests/fixtures/recentlist.json` is a real list, taken off a card in the state the feature
+exists for — a game being played, Menu pressed, nothing else done in between. The parser
+is written against bytes Onion actually produced rather than invented ones, and the answer
+it gives on that file is the right game.
 
 ---
 

@@ -36,6 +36,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/update.sh"
 # shellcheck source=lib/uninstall.sh
 . "$APP_DIR/lib/uninstall.sh"
+# shellcheck source=lib/game.sh
+. "$APP_DIR/lib/game.sh"
 
 DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
 API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
@@ -458,6 +460,53 @@ _chat_failed() {
     history_drop_last
 }
 
+# What the first prompt offers, or nothing.
+#
+# An explicit `suggest` is the user's own words and wins outright. Otherwise
+# the game most recently played, if Onion's list names one and there is a
+# template to put it in.
+#
+# There is no way to tell "a game is loaded right now" from "a game was played
+# last week": the entry looks the same either way. That would matter a great
+# deal if the name were fed to the model silently. It is not - it is ghost text
+# that does nothing until Right is pressed - so a stale suggestion costs one
+# dismissal, the same as any other suggestion that was not wanted. The
+# interaction absorbs the uncertainty, which is why the missing signal never
+# had to be found.
+chat_opening() {
+    if [ -n "$CFG_SUGGEST" ]; then
+        printf '%s' "$CFG_SUGGEST"
+        return 0
+    fi
+
+    [ -n "$CFG_SUGGEST_GAME" ] || return 0
+
+    _co_name=$(game_name) || return 0
+
+    if [ "$CFG_SUGGEST_STRIP_TAGS" = 'true' ]; then
+        _co_name=$(game_strip_tags "$_co_name")
+    fi
+    [ -n "$_co_name" ] || return 0
+
+    # Substituting by parameter expansion rather than sed: the name comes off
+    # the card and would otherwise have to be escaped against a regex, and
+    # getting that wrong on somebody's ROM title is exactly the sort of failure
+    # that never shows up until it does. Only the first {game} is replaced.
+    case "$CFG_SUGGEST_GAME" in
+        *'{game}'*) ;;
+        *)
+            printf '%s' "$CFG_SUGGEST_GAME"
+            return 0
+            ;;
+    esac
+
+    printf '%s%s%s' \
+        "${CFG_SUGGEST_GAME%%'{game}'*}" \
+        "$_co_name" \
+        "${CFG_SUGGEST_GAME#*'{game}'}"
+    return 0
+}
+
 repl() {
     RUNNING=1
 
@@ -465,7 +514,7 @@ repl() {
     # nothing sets another. That is the intent rather than a limitation - an
     # opener is for opening, and by the second prompt there is a conversation
     # under way that the same sentence would only interrupt.
-    input_suggest "$CFG_SUGGEST"
+    input_suggest "$(chat_opening)"
 
     while [ "$RUNNING" -eq 1 ]; do
         chat_refresh_status
@@ -526,6 +575,7 @@ main() {
         die "Cannot write history to $DATA_DIR"
     update_init "$APP_DIR" "$DATA_DIR" "$API_CACERT"
     uninstall_init "$APP_DIR"
+    game_init
 
     ui_init
     screen_init

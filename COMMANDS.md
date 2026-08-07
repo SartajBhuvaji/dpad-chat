@@ -150,6 +150,32 @@ way without dismissing it, which is useful mid-conversation.
 
 ---
 
+## Editing what you type
+
+These are the app's own, not `st`'s, and they work on the line at the prompt.
+
+| Key | Action |
+| --- | --- |
+| **Left / Right** | move the cursor within the line |
+| **Home / End** | jump to the start or end of it |
+| **Backspace** | delete the character behind the cursor |
+| **Del** | delete the character under the cursor, or behind it at the end of the line |
+| **Up / Down** | bring back a line you sent earlier |
+
+Every character costs several button presses here, so being able to reach into the middle
+of a line and fix a typo — rather than erasing back to it — is worth more than it is on a
+desk keyboard. The same goes for **Up**: it brings back what you sent before, with the
+cursor at the end, ready to add to or send again. **Down** walks back towards what you
+were typing, which is kept for you while you look.
+
+Backspace and the cursor keys work across a line that has wrapped onto a second row.
+
+What **Up** recalls is only what you typed at this prompt, it lives in memory for as long
+as the app is open, and it is not part of the conversation the model sees. `/clear` starts
+a new chat but leaves the recall list alone; closing the app empties it.
+
+---
+
 ## The status bar
 
 Two rows stay put while the conversation scrolls between them.

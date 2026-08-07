@@ -474,6 +474,11 @@ repl() {
 
         [ -n "$input" ] || continue
 
+        # Recallable with Up from the next prompt. Commands are remembered
+        # along with questions: retyping /update on a d-pad is exactly what
+        # this is for.
+        input_remember "$input"
+
         if dispatch_command "$input"; then
             continue
         fi

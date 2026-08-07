@@ -6,10 +6,11 @@ usefully — what has to be found out before parts of it can be costed at all.
 The staging exists so that the expensive work is done last, after the cheap work has
 proved it is the right work.
 
-**Chosen: stages A and B.** Onion can already switch from a running game to an App, so the
-hard part of getting there mid-game is somebody else's code and already written. A builds
-the suggestion mechanism, B makes the suggestion be about the game. Neither needs a
-background process, a compiler, or a change to how the app is installed.
+**Stages A and B are built.** Onion can already switch from a running game to an App, so
+the hard part of getting there mid-game was somebody else's code and already written. A
+built the suggestion mechanism, B made the suggestion be about the game. Neither needed a
+background process, a compiler, or a change to how the app is installed — the whole of B
+is one file read.
 
 Stages C and D stay written down and unstarted. Whether either is worth building is a
 question about how B feels in the hand, and that cannot be answered before B exists.
@@ -257,12 +258,25 @@ the cursor arithmetic counts characters as columns. The example in §1 is *"I'm 
 Chrono Trigger — "*, and that em dash is exactly what is ruled out. It matters for step 2,
 where the text is built rather than typed: a hyphen, not a dash.
 
-**2. The game as the source.** Read the two files in §4, derive a name, feed it to the
-mechanism from step 1. Small, and gated only on research question 1 — which is answerable
-from the SD card over SSH without touching the device UI.
+**2. ~~The game as the source.~~ Built.** Read the list in §4, derive a name, feed it to
+the mechanism from step 1. It came out as one `jq` filter and a name-tidying function.
 
-Splitting it this way means step 1 ships and is useful even if the files in §4 turn out not
-to say what they are documented to say.
+Splitting it this way meant step 1 shipped and was useful before the file in §4 had been
+proved to say what it was documented to say — and one of the two files turned out not to
+exist at all.
+
+The wording it produces: `I'm playing Road Rash -`, from `suggest_game`, with `{game}`
+where the name goes. Emptying that setting turns the whole of stage B off;
+`suggest_strip_tags` turns off the `(USA, Europe)` removal for a title that legitimately
+ends in brackets; an explicit `suggest` outranks both, being the user's own words.
+
+The sample went in as `tests/fixtures/recentlist.json`, and the last check in
+`tests/game.sh` runs the real app against it in a real terminal — so what is asserted is
+not that a parser returns a string, but that the prompt on a card in that state offers
+that game.
+
+**Stages A and B are done.** What is left is to use it and find out whether it earns its
+place — which is the only thing that can decide C and D.
 
 ---
 

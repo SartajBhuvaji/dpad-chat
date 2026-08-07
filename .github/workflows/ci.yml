@@ -48,6 +48,9 @@ jobs:
       - name: Line editor
         run: tests/input.sh
 
+      - name: Game awareness
+        run: tests/game.sh
+
       - name: Update tests
         run: tests/update.sh
 

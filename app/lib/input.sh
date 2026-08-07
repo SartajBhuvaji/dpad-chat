@@ -453,6 +453,14 @@ input_suggest() {
     INPUT_SUGGEST=''
     [ -n "${1:-}" ] || return 0
 
+    # Nothing but spaces draws as nothing, but would still cost a keystroke to
+    # dismiss and pad on the way out. That is a misconfiguration rather than a
+    # suggestion, and it is what an emptied-out template arrives as.
+    case "$1" in
+        *[![:space:]]*) ;;
+        *) return 0 ;;
+    esac
+
     # Deleting everything allowed leaves what is not. The sentinel is what
     # keeps a value of nothing but newlines from reading as empty, since
     # command substitution strips those.

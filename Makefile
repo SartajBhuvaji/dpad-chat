@@ -46,6 +46,7 @@ test:
 	@tests/stream.sh
 	@tests/screen.sh
 	@tests/input.sh
+	@tests/game.sh
 	@tests/update.sh
 	@tests/uninstall.sh
 

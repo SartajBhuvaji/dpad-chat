@@ -226,10 +226,8 @@ else
     assert_eq 'the other Home encoding is dropped too' "$KEYS_LINE" 'abcd'
     assert_not_contains 'and it draws nothing either' "$KEYS_ECHO" '~'
 
-    # Not bound until their own issues, but they must already be consumed
-    # whole rather than typed. #20, #21 and #22 give them behaviour.
-    keys 'ab\033[3~\r'
-    assert_eq 'Del is consumed, not typed' "$KEYS_LINE" 'ab'
+    # Not bound until #22, but they must already be consumed whole rather than
+    # typed.
     keys 'ab\033[A\033[B\033[C\033[D\r'
     assert_eq 'arrow keys are consumed, not typed' "$KEYS_LINE" 'ab'
     assert_not_contains 'arrow keys draw nothing' "$KEYS_ECHO" "$ESC"
@@ -261,6 +259,52 @@ else
 
     keys '\177\177x\r'
     assert_eq 'backspace on an empty line is harmless' "$KEYS_LINE" 'x'
+
+    # -------------------------------------------------------------------------
+    # Issue #21: Del, and the other byte for Backspace
+    # -------------------------------------------------------------------------
+
+    printf '\nDeleting\n'
+
+    # `ESC [ 3 ~` used to be echoed as its four bytes and appended to the
+    # message. It deletes now.
+    keys 'abc\033[3~\r'
+    assert_eq 'Del removes a character' "$KEYS_LINE" 'ab'
+    assert_not_contains 'and types nothing' "$KEYS_ECHO" '~'
+
+    keys '\033[3~x\r'
+    assert_eq 'Del on an empty line is harmless' "$KEYS_LINE" 'x'
+
+    keys 'abcde\033[3~\177\033[3~\r'
+    assert_eq 'Del and backspace are interchangeable here' "$KEYS_LINE" 'ab'
+
+    # Which byte the key marked Backspace sends is a property of the terminal,
+    # not of the key. Before this, one of the two did nothing.
+    keys 'abc\010\r'
+    assert_eq 'the other backspace byte erases too' "$KEYS_LINE" 'ab'
+
+    keys 'ab\010\010\010\010c\r'
+    assert_eq 'and it stops at the start of the line' "$KEYS_LINE" 'c'
+
+    # Del goes through the same erase as backspace, so it crosses a wrapped row
+    # rather than stalling at the boundary the way it would have.
+    keys 'abcdefghij\033[3~\r' 10
+    assert_eq 'Del crosses a wrap' "$KEYS_LINE" 'abcdefghi'
+    assert_contains 'stepping up to the row above' "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    keys 'abcdefghij\010\r' 10
+    assert_eq 'and so does the other backspace byte' "$KEYS_LINE" 'abcdefghi'
+
+    # A modified Del - Ctrl-Del here - is a different key and is not bound.
+    # Matching it loosely would delete on a keypress nobody asked to delete on.
+    keys 'abc\033[3;5~\r'
+    assert_eq 'a modified Del is left unbound' "$KEYS_LINE" 'abc'
+    assert_not_contains 'and still types nothing' "$KEYS_ECHO" '~'
+
+    # The neighbouring sequences differ from Del by one byte. Binding on a
+    # prefix rather than the whole sequence would fire on these.
+    keys 'abc\033[2~\033[4~\033[5~\033[6~\r'
+    assert_eq 'the keys either side of Del do not delete' "$KEYS_LINE" 'abc'
 
     # Ctrl-D keeps the meaning the line discipline gave it, so quitting over
     # SSH still works.

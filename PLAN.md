@@ -313,6 +313,23 @@ kernel is doing the editing, so `app/lib/input.sh` takes the terminal raw (`-ica
 -echo`) and does the work itself: one byte at a time, rendering the line, consuming a
 multi-byte key as a single unit, and discarding anything it does not bind.
 
+Keys the editor binds. Anything absent is consumed and discarded, which is the whole
+point: a key with no meaning must leave no trace rather than typing its bytes.
+
+| Key | Bytes | Does |
+| --- | --- | --- |
+| Enter | `CR`, `LF` | submits the line |
+| Backspace | `0x7F`, `0x08` | erases the character behind the cursor |
+| Del | `ESC [ 3 ~` | erases as well — see below |
+| Ctrl-D | `0x04` | ends input, but only on an empty line |
+
+Which byte Backspace sends is a property of how the terminal was built, not of the key,
+so both are bound; guessing wrong leaves the key dead. Del means *forward* delete where a
+cursor can sit mid-line, but the cursor cannot yet be anywhere but the end of the line,
+so there is never a character in front of it — erasing the one behind is what makes the
+key useful in the position it is actually pressed in. The forward case arrives with the
+cursor movement that makes it reachable.
+
 Notes that are easy to get wrong:
 
 - **Bytes are read with `dd`, not `read -n 1`.** `-n` is a bashism that busybox ash
@@ -326,6 +343,15 @@ Notes that are easy to get wrong:
   until the next keypress.
 - **No terminal means no editor.** Piped input falls back to `read`, which is what the
   test suite and `echo /about | tools/simulate.sh` go through.
+- **Erasing across a wrap needs the terminal's width**, and the editor must agree with
+  `ui.sh` about what it is, or the two put the wrap in different places. Same sources in
+  the same order: `UI_COLS`, then `COLUMNS`, then the terminal. Where no width can be
+  established the editor stays on one row rather than moving the cursor somewhere it
+  guessed.
+- **Filling the last column does not move the cursor to the next row.** The terminal
+  leaves the wrap pending and acts on it only when the next character arrives, so at that
+  moment the cursor's row is ambiguous — exactly at the boundary the erase arithmetic
+  cares about. Inserting forces the wrap there to settle it.
 
 Testing it needs a real pty, since raw mode and echo do not exist without one.
 `tests/keys.py` supplies one, and avoids the usual race — a pty starts with echo on, so

@@ -137,11 +137,14 @@ That is a file read and a string, not a daemon.
 
 **Confirmed on hardware.** What follows is read off a real card, not from documentation.
 
-**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` does not exist**, at least not once a game has
-been exited to the menu. The documentation describing it as the auto-resume command is
-either about a different Onion version or about a file that only exists at boot. It is
-dropped from the design: nothing should depend on a file that was not there when looked
-for.
+The card was read in exactly the state this feature exists for: *Road Rash* being played,
+Menu pressed to come out of it, nothing else done in between.
+
+**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` does not exist** — not even then. The
+documentation describing it as the auto-resume command is either about a different Onion
+version or about a file that only lives at boot. It is dropped from the design rather than
+guarded around: nothing should depend on a file that was absent at the one moment it was
+supposed to be there.
 
 **`/mnt/SDCARD/Roms/recentlist.json` is real, and is better than expected.** It is
 newline-delimited JSON — one object per line, no enclosing array — which `jq` reads
@@ -155,17 +158,22 @@ natively with no flags:
 `label` is exactly what is wanted: the name Onion itself displays, already human-readable,
 with no filename mangling to undo.
 
-### The entry at the top is us
+### This app is in the list as well
 
-**Apps are in this list too, and launching D-Pad Chat pushes D-Pad Chat onto it.** By the
-time our code runs, the most recent entry is always ourselves — in the sample above, twice
-over. Reading "the first entry" would have produced *"I'm playing D-Pad Chat"*, and it
-would have done it every single time.
+**Apps share the list with games**, and D-Pad Chat is in the sample twice, from earlier
+launches, sitting just under *Road Rash*. Reading "the first entry" would therefore
+sometimes give a game and sometimes give this app, depending on nothing more interesting
+than what was opened last.
+
+Whether our own entry is above the game by the time our code runs depends on whether Onion
+writes it when an app is launched or when it exits — the sample was taken without launching
+the app, so it does not say. **That question never needs answering**, which is the point:
 
 Games carry `rompath` and `imgpath`; apps have only `launch`. **Presence of `rompath` is
-the discriminator**, and it is a better one than `type` — 5 against 3 in the sample, but
-those are numbers whose meaning we would be guessing at, and there is no reason to think
-they enumerate only those two things.
+the discriminator**, and it is position-independent, so it is right under either behaviour.
+It is also a better discriminator than `type` — 5 against 3 in the sample, but those are
+numbers whose meaning we would be guessing at, and there is no reason to think they
+enumerate only those two things.
 
 ```sh
 jq -r 'select(has("rompath")) | .label' recentlist.json 2>/dev/null | head -n 1
@@ -198,6 +206,15 @@ read-only refinement that can be added later. Not before there is evidence it is
 
 The sample above goes into the repository as a test fixture, so the parser is written
 against real bytes rather than invented ones.
+
+### The one thing the sample proves outright
+
+It was captured from the exact position the feature is for — mid-game, Menu pressed — and
+the answer at the top of the games is *Road Rash (USA, Europe)*. Launching the app at that
+moment would produce the right suggestion.
+
+That is the whole of stage B demonstrated on real data before a line of it is written,
+which is worth more than any amount of reasoning about what the file probably contains.
 
 ### Deliberately conservative
 

@@ -16,6 +16,7 @@ of the SD card, put the card back, and open **Apps → D-Pad Chat**.
 - [First launch](#first-launch)
 - [Upgrading](#upgrading)
 - [Uninstalling](#uninstalling)
+- [Restarting the device](#restarting-the-device)
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
 
@@ -300,6 +301,51 @@ and consider revoking the key at [platform.openai.com/api-keys][keys].
 There is no uninstall entry in Onion's Apps menu, and no app can add one: that menu is
 MainUI's, and an app cannot put a command into the list that launches it. `/uninstall` is
 inside the app for the same reason `/update` is.
+
+---
+
+## Restarting the device
+
+Onion reads the Apps menu at boot, so after installing, uninstalling or moving a folder,
+you need a restart before the change shows up. Holding **POWER** for a few seconds is a
+safe shutdown, and pressing it again boots — that is the no-computer way to do it, and it
+is enough most of the time.
+
+It has one catch. Onion records what was running in `.tmp_update/cmd_to_run.sh` and the
+next boot goes straight back into it, so a power cycle in the middle of a game puts you
+back in the game rather than at the menu.
+
+From a checkout, when you want a genuinely fresh start:
+
+```sh
+make reboot HOST=192.168.1.42
+```
+
+```
+This restarts onion@192.168.1.42 now.
+Any unsaved game progress is lost.
+Auto-resume is cleared, so it comes up at the Apps menu
+rather than back in the game.
+
+Restart? [y/N]
+```
+
+It clears auto-resume, flushes the card, and restarts. Options:
+
+| Option | Effect |
+| --- | --- |
+| `--off` | shut down instead of restarting |
+| `--keep-resume` | leave auto-resume alone, so it comes back where it was |
+| `--yes` | do not ask |
+
+**It costs unsaved progress.** Holding POWER lets Onion write a save state first; this
+does not wait for one. That is the point — it is for clearing the device, not for putting
+it down — but it is why it asks, and why piping into it is refused rather than taken as a
+yes.
+
+It refuses any host without a `/mnt/SDCARD/.tmp_update` on it, so a mistyped address that
+happens to answer SSH is not restarted. Use `tools/reboot.sh --print-remote` to see
+exactly what would run on the device.
 
 ---
 

@@ -141,11 +141,18 @@ That is a file read and a string, not a daemon.
 The card was read in exactly the state this feature exists for: *Road Rash* being played,
 Menu pressed to come out of it, nothing else done in between.
 
-**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` does not exist** — not even then. The
-documentation describing it as the auto-resume command is either about a different Onion
-version or about a file that only lives at boot. It is dropped from the design rather than
-guarded around: nothing should depend on a file that was absent at the one moment it was
-supposed to be there.
+**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` was not there** — not even then. It is dropped
+from the design rather than guarded around: nothing should depend on a file that was
+absent at the one moment it was supposed to be there.
+
+> **Since corrected.** It is the auto-resume file, and it is real — Onion's own FAQ
+> documents deleting it as the way out of a ROM that black-screens on every boot. The
+> reading that fits both facts is that Onion **writes it as it shuts down**, not while a
+> game runs, so it was genuinely absent when the card was read and genuinely present at
+> boot. That does not bring it back into stage B: a file that only exists while the device
+> is off cannot say what is running while it is on. It does matter elsewhere, and
+> `tools/reboot.sh` clears it — that is the difference between a power cycle and a device
+> that comes up at the Apps menu instead of back in the game.
 
 **`/mnt/SDCARD/Roms/recentlist.json` is real, and is better than expected.** It is
 newline-delimited JSON — one object per line, no enclosing array — which `jq` reads
@@ -419,7 +426,9 @@ blocks nothing. The rest belong to stages C and D, are not being worked on, and 
 so the reasons behind the staging survive.
 
 1. ~~Do the two files exist and hold what is claimed?~~ **Answered.**
-   `.tmp_update/cmd_to_run.sh` was not there and is dropped; `Roms/recentlist.json` is real,
+   `.tmp_update/cmd_to_run.sh` was not there and is dropped — it is the auto-resume file,
+   written at shutdown rather than while a game runs, so it can never answer what is
+   running now; `Roms/recentlist.json` is real,
    is newline-delimited JSON, and carries a `label` — and also carries this app, which is
    why §4 keys on `rompath`. **Stage B is no longer waiting on anything.**
 2. ~~What state does switching back leave the game in?~~ **Answered: resumable.** Menu out

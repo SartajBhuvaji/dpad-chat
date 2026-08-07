@@ -51,6 +51,9 @@ jobs:
       - name: Game awareness
         run: tests/game.sh
 
+      - name: Reboot tool
+        run: tests/reboot.sh
+
       - name: Update tests
         run: tests/update.sh
 

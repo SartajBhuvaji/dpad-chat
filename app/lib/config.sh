@@ -50,6 +50,13 @@ config_defaults() {
     # fit a 640x480 panel; replaying the full retained history would push the
     # prompt off the bottom before the user has typed anything.
     CFG_REPLAY_MESSAGES='4'
+
+    # An opening offered as ghost text at the first prompt of a session, which
+    # Right accepts and any other key dismisses. Empty by default: the same
+    # sentence every launch is noise, and the setting exists so that an opener
+    # worth repeating - or, later, one worked out from what is being played -
+    # has somewhere to come from.
+    CFG_SUGGEST=''
 }
 
 # -----------------------------------------------------------------------------
@@ -80,6 +87,7 @@ config_load() {
     [ -z "${DPAD_STREAM:-}" ] || CFG_STREAM="$DPAD_STREAM"
     [ -z "${DPAD_REPLAY_MESSAGES:-}" ] || CFG_REPLAY_MESSAGES="$DPAD_REPLAY_MESSAGES"
     [ -z "${DPAD_GITHUB_TOKEN:-}" ] || CFG_GITHUB_TOKEN="$DPAD_GITHUB_TOKEN"
+    [ -z "${DPAD_SUGGEST:-}" ] || CFG_SUGGEST="$DPAD_SUGGEST"
 
     _config_validate
 }
@@ -118,6 +126,7 @@ _config_read_file() {
             stream) CFG_STREAM="$value" ;;
             replay_messages) CFG_REPLAY_MESSAGES="$value" ;;
             github_token) CFG_GITHUB_TOKEN="$value" ;;
+            suggest) CFG_SUGGEST="$value" ;;
             *) log_warn "$CONFIG_FILE:$line_no: unknown setting '$key', ignored" ;;
         esac
     done <"$CONFIG_FILE"

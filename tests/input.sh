@@ -113,6 +113,20 @@ assert_eq 'a bare call is safe once a width is known' \
         input_readline && printf '0:%s' "$INPUT_LINE"
     ))" '0:hi'
 
+# There is nothing to draw a suggestion on and nothing to press Right with, so
+# the fallback must not put one anywhere near the line. The whole suite reads
+# lines through this path, so a suggestion leaking into one here would be a
+# question nobody asked being sent.
+assert_eq 'a suggestion cannot reach a piped line' \
+    "$(printf 'typed\n' | (
+        # shellcheck source=../app/lib/input.sh
+        . "$REPO_ROOT/app/lib/input.sh"
+        input_init
+        input_suggest 'ghost'
+        # shellcheck disable=SC2119
+        input_readline && printf '0:%s' "$INPUT_LINE"
+    ))" '0:typed'
+
 assert_eq 'no terminal means no raw mode' \
     "$(printf 'x\n' | (
         # shellcheck source=../app/lib/input.sh
@@ -144,6 +158,7 @@ else
 fi
 
 input_init
+input_suggest "${DRIVER_SUGGEST:-}"
 
 before=$(stty -g)
 if input_readline "${DRIVER_PROMPT_COLS:-0}"; then
@@ -170,7 +185,8 @@ chmod +x "$DRIVER"
 DRIVER_OUT="$WORK_DIR/driver.out"
 DRIVER_PROMPT_COLS=0
 DRIVER_COLS=''
-export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS
+DRIVER_SUGGEST=''
+export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS DRIVER_SUGGEST
 
 # Types the given keystrokes at a pty and leaves the outcome in KEYS_RC,
 # KEYS_LINE and KEYS_ECHO. KEYS_ECHO is everything the editor drew, with none
@@ -222,6 +238,7 @@ else
 fi
 
 input_init
+input_suggest "${DRIVER_SUGGEST:-}"
 : >"$DRIVER_OUT"
 
 while input_readline "${DRIVER_PROMPT_COLS:-0}"; do
@@ -494,6 +511,127 @@ else
     # would spin here forever.
     keys 'a\033[111111111111111111111111Zb\r'
     assert_eq 'an overlong sequence still terminates' "$KEYS_RC" '0'
+
+    # -------------------------------------------------------------------------
+    # Suggesting an opening
+    # -------------------------------------------------------------------------
+
+    printf '\nSuggesting an opening\n'
+
+    # The suggestion is drawn but is not the line. Everything here turns on
+    # that distinction, so it is asserted first and from both sides: what
+    # reached the screen, and what reached INPUT_LINE.
+    DRIVER_SUGGEST='hi'
+    export DRIVER_SUGGEST
+
+    keys '\r'
+    assert_eq 'a suggestion is not in the line' "$KEYS_LINE" ''
+    assert_contains 'but it is drawn, dimmed' "$KEYS_ECHO" \
+        "$(printf '\033[2mhi\033[0m')"
+    # Drawn, then the cursor sent back to where the line starts, so what is
+    # typed next goes in front of it rather than after it.
+    assert_contains 'with the cursor left at the start of the line' \
+        "$KEYS_ECHO" "$(printf '\033[1G\033[2mhi\033[0m\033[1G')"
+
+    keys '\033[C\r'
+    assert_eq 'Right takes it' "$KEYS_LINE" 'hi '
+
+    keys '\033OC\r'
+    assert_eq 'in either encoding' "$KEYS_LINE" 'hi '
+
+    # The space is the point: what follows a suggestion is the user's own
+    # words, and having to press for the space between them would give back
+    # part of what accepting it saved.
+    keys '\033[Cthere\r'
+    assert_eq 'and leaves the cursor ready to carry on' "$KEYS_LINE" 'hi there'
+
+    # Accepting is a one-off, not a rebinding of Right. Once the suggestion has
+    # gone the key is a cursor move again.
+    keys '\033[Cx\033[D\033[CY\r'
+    assert_eq 'after which Right is a cursor move again' "$KEYS_LINE" 'hi xY'
+
+    # Anything else dismisses. Typing is the ordinary case: the character
+    # typed is the whole line, with no trace of the suggestion in it.
+    keys 'x\r'
+    assert_eq 'typing dismisses it' "$KEYS_LINE" 'x'
+    assert_contains 'covering it with spaces' "$KEYS_ECHO" \
+        "$(printf '\033[1G  \033[1G')"
+
+    # Keys that do nothing on an empty line still have to take it off the
+    # screen, and they are the ones that would not have redrawn otherwise.
+    for _dismiss in '\033[D' '\033[H' '\033[F' '\033[3~' '\033[2~' '\177'; do
+        keys "${_dismiss}\r"
+        assert_eq "dismissed by ${_dismiss}, leaving nothing behind" \
+            "$KEYS_LINE" ''
+        assert_contains "and ${_dismiss} covers it" "$KEYS_ECHO" \
+            "$(printf '\033[1G  \033[1G')"
+    done
+
+    # Up is bound to recall, which replaces the line. The suggestion has to be
+    # gone before that happens or its columns would still be counted against a
+    # line it is no longer part of.
+    assert_eq 'recall dismisses it rather than appending to it' \
+        "$(session 'one\r\033[A\r\004')" "$(printf 'one\none')"
+
+    # Offered once. The second prompt of the session has none, so Right there
+    # is a cursor move on an empty line and does nothing.
+    assert_eq 'the offer is made once per session' \
+        "$(session '\033[C\r\033[C\r\004')" "$(printf 'hi \n')"
+
+    # A suggestion that exactly fills the row leaves the terminal with a wrap
+    # pending, the same ambiguity the line itself has at a boundary. Covering
+    # it has to force that wrap too, or the spaces would land a row high.
+    DRIVER_SUGGEST='abcdefghij'
+    export DRIVER_SUGGEST
+
+    keys 'z\r' 10
+    assert_eq 'a suggestion that fills the row is dismissed cleanly' \
+        "$KEYS_LINE" 'z'
+    # Left to right: over to the first column of the row the line starts on;
+    # ten spaces covering the ghost; the wrap forced, because those ten fill
+    # the row and the terminal would otherwise leave the cursor on it with the
+    # wrap still pending; and back up to where the line starts. Without the
+    # forced wrap the step up would be one row too many and the prompt would
+    # be typed over.
+    assert_contains 'forcing the wrap the cover would otherwise leave pending' \
+        "$KEYS_ECHO" "$(printf '\033[1G          \r\r\n\033[1A\033[1G')"
+
+    # Column arithmetic here counts characters as columns, which multi-byte
+    # text breaks, and a control byte would be an escape the terminal obeys
+    # rather than text it draws. Refused, and the prompt is simply plain.
+    DRIVER_SUGGEST=$(printf 'caf\303\251')
+    export DRIVER_SUGGEST
+
+    keys 'x\r'
+    assert_eq 'a suggestion that is not printable ASCII is refused' \
+        "$KEYS_LINE" 'x'
+    assert_not_contains 'and nothing of it is drawn' "$KEYS_ECHO" 'caf'
+
+    DRIVER_SUGGEST=$(printf 'a\033[31mb')
+    export DRIVER_SUGGEST
+
+    keys 'x\r'
+    assert_not_contains 'nor is one carrying an escape sequence' \
+        "$KEYS_ECHO" '[31m'
+
+    # Ghost text that cannot be dimmed is indistinguishable from what the user
+    # typed, which is worse than no suggestion at all.
+    DRIVER_SUGGEST='hi'
+    export DRIVER_SUGGEST
+    NO_COLOR=1
+    export NO_COLOR
+
+    keys '\033[Cx\r'
+    assert_eq 'NO_COLOR means no offer' "$KEYS_LINE" 'x'
+    assert_not_contains 'and nothing is drawn to dismiss' "$KEYS_ECHO" 'hi'
+
+    unset NO_COLOR
+
+    DRIVER_SUGGEST=''
+    export DRIVER_SUGGEST
+
+    keys 'x\r'
+    assert_eq 'no suggestion set is the prompt as it was' "$KEYS_LINE" 'x'
 
     # -------------------------------------------------------------------------
     # Issue #20: erasing across a wrapped row

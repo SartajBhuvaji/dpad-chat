@@ -69,6 +69,7 @@ input_init() {
     INPUT_START_COL=0
     _input_reset_line
     _input_recall_init
+    _input_suggest_init
 
     # stdin carries the keystrokes and stdout is where the line is drawn, so
     # both have to be a terminal. dd and stty are busybox builtins on the
@@ -285,8 +286,16 @@ _input_move_back() {
 # already does for every byte it reads, which is far more expensive.
 _input_redraw() {
     _rd_all="$INPUT_HEAD$INPUT_TAIL"
-    _rd_len=${#_rd_all}
     _rd_cur=${#INPUT_HEAD}
+
+    # The suggestion is drawn past the end of the line and is not part of it.
+    # It never reaches INPUT_HEAD or INPUT_TAIL, so it cannot be submitted -
+    # but it does occupy columns, so everything below that counts columns has
+    # to count it too, or dismissing it would leave it on screen.
+    _rd_ghost=''
+    [ "$_INPUT_SUGGEST_ON" -eq 0 ] || _rd_ghost="$INPUT_SUGGEST"
+
+    _rd_len=$((${#_rd_all} + ${#_rd_ghost}))
 
     # Whatever the line used to be longer by is still on screen behind it.
     # Spaces cover it, which is cheaper than erasing to the end of each row the
@@ -300,6 +309,9 @@ _input_redraw() {
     _input_move_back "$_INPUT_DRAWN_POS" 0
 
     printf '%s' "$_rd_all"
+    [ -z "$_rd_ghost" ] ||
+        printf '%s%s%s' "$_INPUT_DIM" "$_rd_ghost" "$_INPUT_DIM_OFF"
+
     _rd_i=0
     while [ "$_rd_i" -lt "$_rd_pad" ]; do
         printf ' '
@@ -390,6 +402,103 @@ _input_end() {
     [ -n "$INPUT_TAIL" ] || return 0
     INPUT_HEAD="$INPUT_HEAD$INPUT_TAIL"
     INPUT_TAIL=''
+    _input_redraw
+}
+
+# -----------------------------------------------------------------------------
+# Suggesting an opening
+# -----------------------------------------------------------------------------
+
+# A character costs around five button presses on a d-pad, so a forty-character
+# opener is two hundred of them. Offering one that Right accepts whole is the
+# difference between asking a question mid-game and not bothering.
+#
+# It is drawn dim, past the cursor, and is not in the buffer: Right takes it,
+# and every other key takes it away. Nothing is ever sent that the user did not
+# either type or accept, which is what makes a wrong suggestion cost one
+# keypress rather than a wrong question.
+#
+# Where the text comes from is the caller's business. This file only knows how
+# to offer one.
+_input_suggest_init() {
+    INPUT_SUGGEST=''
+    _INPUT_SUGGEST_ON=0
+
+    # The ghost has to read as not-yet-typed. Undimmed it is indistinguishable
+    # from what the user typed themselves, which is worse than no suggestion at
+    # all - so where it cannot be dimmed it is not offered. NO_COLOR is honoured
+    # for the same reason ui.sh honours it, and the two agree because both read
+    # the same variable.
+    if [ -n "${NO_COLOR:-}" ]; then
+        _INPUT_DIM=''
+        _INPUT_DIM_OFF=''
+    else
+        _INPUT_DIM=$(printf '\033[2m')
+        _INPUT_DIM_OFF=$(printf '\033[0m')
+    fi
+}
+
+# Sets what the next prompt offers. One shot: cleared once the read that
+# offered it returns, so how often a suggestion appears is decided by whoever
+# sets it rather than here.
+#
+# Refused unless it is printable ASCII. The cursor arithmetic in this file
+# counts characters as columns, which multi-byte text breaks, and a control
+# byte would be an escape sequence the terminal obeys rather than text it
+# draws - settings.cfg is a file on a card that anyone can edit.
+#
+# Refused silently, and by returning to the plain prompt. A suggestion is a
+# convenience; the app without one is still the app.
+input_suggest() {
+    INPUT_SUGGEST=''
+    [ -n "${1:-}" ] || return 0
+
+    # Deleting everything allowed leaves what is not. The sentinel is what
+    # keeps a value of nothing but newlines from reading as empty, since
+    # command substitution strips those.
+    _is_bad=$(
+        printf '%s' "$1" | LC_ALL=C tr -d ' -~'
+        printf X
+    )
+    [ "$_is_bad" = 'X' ] || return 0
+
+    INPUT_SUGGEST="$1"
+    return 0
+}
+
+# Called once the line has been reset, so the ghost is the only thing on it.
+_input_suggest_offer() {
+    _INPUT_SUGGEST_ON=0
+
+    [ -n "$INPUT_SUGGEST" ] || return 0
+    [ -n "$_INPUT_DIM" ] || return 0
+
+    _INPUT_SUGGEST_ON=1
+    _input_redraw
+}
+
+# The redraw covers what the line used to be longer by, and the ghost was
+# counted in that length, so clearing the flag and redrawing is all it takes.
+_input_suggest_dismiss() {
+    _INPUT_SUGGEST_ON=0
+    _input_redraw
+}
+
+_input_suggest_accept() {
+    INPUT_HEAD="$INPUT_SUGGEST"
+
+    # A suggestion is an opening, not a whole message: what follows it is the
+    # user's own words, so the space between the two belongs to accepting it.
+    # The settings parser trims trailing space off a value, so a suggestion
+    # from there cannot carry its own - but one built in code can, and two
+    # spaces would be as wrong as none.
+    case "$INPUT_HEAD" in
+        *' ') ;;
+        *) INPUT_HEAD="$INPUT_HEAD " ;;
+    esac
+
+    INPUT_TAIL=''
+    _INPUT_SUGGEST_ON=0
     _input_redraw
 }
 
@@ -539,12 +648,22 @@ input_readline() {
     INPUT_RECALL_AT=0
     INPUT_RECALL_LIVE=''
 
+    _input_suggest_offer
+
     _in_eof=0
 
     while :; do
         if ! _input_byte; then
             _in_eof=1
             break
+        fi
+
+        # The suggestion is offered for exactly one keystroke, and the key that
+        # takes it is Right. ESC is held back because the key an escape
+        # sequence belongs to is not known until the rest of it has been read;
+        # every other byte is already the whole key.
+        if [ "$_INPUT_SUGGEST_ON" -eq 1 ] && [ "$_in_b" != "$INPUT_ESC" ]; then
+            _input_suggest_dismiss
         fi
 
         case "$_in_b" in
@@ -558,6 +677,20 @@ input_readline() {
                 ;;
             "$INPUT_ESC")
                 _input_escape
+
+                # Right takes the suggestion and is done; the cursor move it
+                # would otherwise be is a no-op here anyway, since the line it
+                # is offered on is empty. Anything else dismisses it and is
+                # then handled below as though it had never been there.
+                if [ "$_INPUT_SUGGEST_ON" -eq 1 ]; then
+                    case "$INPUT_KEY" in
+                        '[C' | 'OC')
+                            _input_suggest_accept
+                            continue
+                            ;;
+                        *) _input_suggest_dismiss ;;
+                    esac
+                fi
 
                 # Both encodings of every cursor key. Which one arrives depends
                 # on whether the terminal is in application cursor key mode,
@@ -601,6 +734,13 @@ input_readline() {
                 ;;
         esac
     done
+
+    # Only reachable by way of end of input, which breaks out before any key
+    # has been read. Every other exit dismissed the ghost on the way past.
+    [ "$_INPUT_SUGGEST_ON" -eq 0 ] || _input_suggest_dismiss
+
+    # Offered once. A second prompt gets one only if the caller sets another.
+    INPUT_SUGGEST=''
 
     input_restore
 

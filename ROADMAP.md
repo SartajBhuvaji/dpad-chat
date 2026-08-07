@@ -234,11 +234,28 @@ conflict with, and no version of Onion is required.
 Two changes, in this order, because the first needs nothing from anybody and the second is
 small once it exists.
 
-**1. The suggestion mechanism, with static text.** Ghost prefill, Right to accept, a
-`suggest=` setting in `settings.cfg`. Testable entirely through `tests/keys.py` — the pty
-harness already drives the editor a keystroke at a time, and a suggestion that is drawn but
-not in the buffer is exactly the kind of thing that harness was built to catch. Nothing
-here waits on hardware.
+**1. ~~The suggestion mechanism, with static text.~~ Built.** Ghost prefill, Right to
+accept, a `suggest=` setting in `settings.cfg`. Testable entirely through `tests/keys.py` —
+the pty harness already drives the editor a keystroke at a time, and a suggestion that is
+drawn but not in the buffer is exactly the kind of thing that harness was built to catch.
+Nothing here waited on hardware.
+
+The design notes in §3 all survived contact. Two things worth recording from doing it:
+
+- **The redraw already knew how to erase the ghost.** It covers whatever the line used to
+  be longer by, so counting the suggestion's columns in that length made dismissal fall
+  out of the existing code rather than needing its own path. Setting a flag and redrawing
+  is the whole of it, and a suggestion that exactly fills a row forces the same pending
+  wrap the line itself does — which is a case that only exists because the accounting is
+  shared.
+- **Accepting adds the space.** The settings parser trims trailing whitespace off every
+  value, so a suggestion cannot carry its own — and having to press for the space between
+  the suggestion and your own words would give back part of what accepting it saved.
+
+One constraint that was not foreseen: the suggestion must be **printable ASCII**, because
+the cursor arithmetic counts characters as columns. The example in §1 is *"I'm playing
+Chrono Trigger — "*, and that em dash is exactly what is ruled out. It matters for step 2,
+where the text is built rather than typed: a hyphen, not a dash.
 
 **2. The game as the source.** Read the two files in §4, derive a name, feed it to the
 mechanism from step 1. Small, and gated only on research question 1 — which is answerable

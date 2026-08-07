@@ -460,6 +460,13 @@ _chat_failed() {
 
 repl() {
     RUNNING=1
+
+    # Reaches the first prompt and no further: input_readline consumes it, and
+    # nothing sets another. That is the intent rather than a limitation - an
+    # opener is for opening, and by the second prompt there is a conversation
+    # under way that the same sentence would only interrupt.
+    input_suggest "$CFG_SUGGEST"
+
     while [ "$RUNNING" -eq 1 ]; do
         chat_refresh_status
         printf '\n'

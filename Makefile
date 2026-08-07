@@ -45,6 +45,7 @@ test:
 	@tests/install.sh
 	@tests/stream.sh
 	@tests/screen.sh
+	@tests/input.sh
 	@tests/update.sh
 
 sim:

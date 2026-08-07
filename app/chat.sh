@@ -22,6 +22,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/ui.sh"
 # shellcheck source=lib/screen.sh
 . "$APP_DIR/lib/screen.sh"
+# shellcheck source=lib/input.sh
+. "$APP_DIR/lib/input.sh"
 # shellcheck source=lib/config.sh
 . "$APP_DIR/lib/config.sh"
 # shellcheck source=lib/net.sh
@@ -186,10 +188,11 @@ cmd_update() {
 chat_confirm() {
     printf '\n%s%s [y/N] %s' "$C_USER" "$1" "$C_RESET"
 
-    if ! IFS= read -r answer; then
+    if ! input_readline; then
         printf '\n'
         return 1
     fi
+    answer="$INPUT_LINE"
 
     case "$answer" in
         y | Y | yes | Yes | YES) return 0 ;;
@@ -366,10 +369,11 @@ repl() {
         ui_prompt
 
         # A failed read means EOF: the pipe closed, or `st` exited via Select.
-        if ! IFS= read -r input; then
+        if ! input_readline; then
             printf '\n'
             break
         fi
+        input="$INPUT_LINE"
 
         # Trim surrounding whitespace, which the on-screen keyboard makes easy
         # to introduce and which would otherwise defeat command matching.
@@ -393,6 +397,9 @@ repl() {
 # the log line: without this, Onion gets a terminal that scrolls inside two
 # rows that are no longer there.
 on_exit() {
+    # Before screen_teardown, because a terminal left in raw mode is the worse
+    # of the two things to hand back: Onion's menu would come up with no echo.
+    input_restore
     screen_teardown
     log_info '--- session ended ---'
 }
@@ -412,6 +419,7 @@ main() {
 
     ui_init
     screen_init
+    input_init
     chat_refresh_status
     screen_clear
     chat_header

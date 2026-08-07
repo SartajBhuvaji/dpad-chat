@@ -17,3 +17,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Scratch worktrees created by tooling; never part of the project.
+.claude/

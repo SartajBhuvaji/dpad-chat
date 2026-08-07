@@ -48,6 +48,45 @@ thirds of what makes the idea good can be had without any of it.
 
 ---
 
+## 2a. Installing must not get harder
+
+Today the whole install is: copy a folder onto the card, open it from Apps, set a key.
+Nothing is registered, nothing runs at boot, nothing is patched. Uninstalling is deleting
+the folder. That property is worth more than any single feature here, and it constrains
+the staging rather than falling out of it.
+
+Where each stage leaves it:
+
+- **Stage A — unchanged.** It is code inside the app.
+- **Stage C — unchanged, for the user.** A cross-compiled binary is still just a file in
+  the folder that gets copied. The toolchain cost is ours, at build time; nobody installing
+  it needs a compiler, and the release stays a zip of `App/DPadChat/`.
+- **Stage B — this is the one that can break it**, and it is the real reason research
+  question 1 matters.
+
+A hotkey has to be watched while the app is *not* running. Something must therefore be
+alive that we did not start by being opened from the menu, and how it comes to be alive
+decides the install story:
+
+1. **Onion's in-game menu can be extended by a file in our own folder.** Nothing changes:
+   still copy a folder, and the hotkey works because Onion already watched for it.
+2. **Onion has a supported hook for starting something at boot from an App folder.** Also
+   fine — a file we ship, not a step anyone runs.
+3. **Onion's own files have to be modified.** This is the bad outcome. It turns installing
+   into "copy the folder, then run this", uninstalling into something that leaves traces,
+   and an Onion update into something that can silently switch the feature off. **I would
+   argue for not shipping B at all rather than shipping that**, or at most shipping it as
+   something clearly opt-in and clearly separate.
+
+There is a middle ground worth keeping in mind if 1 and 2 both fail: **arm the watcher
+from `launch.sh`**, so opening the app once after a reboot enables the hotkey until the
+device is powered off. No setup, nothing installed, nothing patched — it simply does not
+survive a cold boot until it has been opened once. Given how rarely these get fully
+powered down rather than slept, that may be an acceptable version of the feature, and it
+is strictly better than asking anyone to patch their OS.
+
+---
+
 ## 3. Stage A — the prefill, in the terminal we already have
 
 **Ships inside the current app. No new binary, no new process.**
@@ -152,10 +191,16 @@ Smaller work that stands on its own, roughly in the order I would take it.
 Ordered by how much they change the plan. The first one is worth more than the rest
 together.
 
-1. **Is Onion's in-game menu extensible?** If an entry can be added to something that
-   already knows how to suspend a game and take the screen, most of stage B disappears and
-   some of C gets easier. If not, both get substantially larger. *Read Onion's `keymon` and
-   in-game menu source.*
+1. **Is Onion's in-game menu extensible, and can anything be started at boot from an App
+   folder?** If an entry can be added to something that already knows how to suspend a game
+   and take the screen, most of stage B disappears and some of C gets easier. If not, both
+   get substantially larger.
+
+   This question decides two separate things, which is why it is worth more than the rest
+   together: how large stage B is, **and whether stage B keeps the install story in §2a**.
+   A version of B that requires patching Onion's own files is one I would argue against
+   shipping regardless of how well it worked. *Read Onion's `keymon`, its in-game menu, and
+   whatever `/mnt/SDCARD/.tmp_update` does at startup.*
 2. **Where does Onion record the game currently running?** Needed for the game-aware
    prefill regardless of which stage delivers it.
 3. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage B may

@@ -48,13 +48,15 @@ Color = tuple[int, int, int, int]
 
 
 def read_png(path: pathlib.Path) -> "Canvas":
-    """Decode an 8-bit non-interlaced PNG. Enough for the committed source art."""
+    """Decode an 8-bit non-interlaced PNG used for committed source art."""
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         sys.exit(f"make_icon: {path} is not a PNG")
 
     pos, idat = 8, bytearray()
-    width = height = channels = 0
+    width = height = channels = color_type = 0
+    palette: list[tuple[int, int, int]] = []
+    palette_alpha: list[int] = []
 
     while pos < len(data):
         (length,) = struct.unpack(">I", data[pos : pos + 4])
@@ -68,9 +70,20 @@ def read_png(path: pathlib.Path) -> "Canvas":
             )
             if depth != 8 or interlace != 0:
                 sys.exit("make_icon: only 8-bit non-interlaced PNGs are supported")
-            channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type, 0)
+            channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type, 0)
             if not channels:
                 sys.exit(f"make_icon: unsupported colour type {color_type}")
+        elif tag == b"PLTE":
+            if len(payload) % 3 != 0:
+                sys.exit("make_icon: malformed palette")
+            palette = [
+                (payload[i], payload[i + 1], payload[i + 2])
+                for i in range(0, len(payload), 3)
+            ]
+        elif tag == b"tRNS":
+            # For indexed-colour PNGs, tRNS gives per-entry alpha values.
+            if color_type == 3:
+                palette_alpha = list(payload)
         elif tag == b"IDAT":
             idat += payload
         elif tag == b"IEND":
@@ -80,11 +93,22 @@ def read_png(path: pathlib.Path) -> "Canvas":
     rows = _unfilter(raw, width, height, channels)
 
     canvas = Canvas(max(width, height))
+    if color_type == 3 and not palette:
+        sys.exit("make_icon: indexed PNG is missing PLTE")
+
     for y in range(height):
         row = rows[y]
         for x in range(width):
             px = row[x * channels : (x + 1) * channels]
-            canvas.pixels[y * canvas.size + x] = _to_rgba(px, channels)
+            if color_type == 3:
+                idx = px[0]
+                if idx >= len(palette):
+                    sys.exit("make_icon: palette index out of range")
+                red, green, blue = palette[idx]
+                alpha = palette_alpha[idx] if idx < len(palette_alpha) else 255
+                canvas.pixels[y * canvas.size + x] = [red, green, blue, alpha]
+            else:
+                canvas.pixels[y * canvas.size + x] = _to_rgba(px, channels)
     return canvas
 
 

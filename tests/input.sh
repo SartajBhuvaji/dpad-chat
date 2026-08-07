@@ -373,11 +373,18 @@ else
     assert_not_contains 'and without the prompt they do not reach it' \
         "$KEYS_ECHO" "$(printf '\033[1A')"
 
-    # A terminal that does not report a size, with nothing pinning one either.
-    # The width is unknown, so wraps cannot be located and the editor stays on
-    # one row rather than moving the cursor somewhere it guessed.
-    keys 'abc\177\r' 0 tty
-    assert_eq 'an unknown width is reported as zero' "$KEYS_COLS" '0'
+    # A width too small to hold a wrap, which is how a terminal that cannot say
+    # how wide it is arrives here. Wraps cannot be located, so the editor stays
+    # on one row rather than moving the cursor somewhere it guessed.
+    #
+    # Pinned through COLUMNS rather than by leaving the terminal unsized,
+    # because the two implementations disagree on what an unsized terminal
+    # reports: coreutils stty prints 0, and busybox substitutes 80 rather than
+    # admitting it does not know. Only the pinned form means the same thing in
+    # both places - and on the device that busybox fallback is why the width
+    # always resolves to something.
+    keys 'abc\177\r' 0
+    assert_eq 'too narrow to wrap is reported as zero' "$KEYS_COLS" '0'
     assert_eq 'and the line is still edited' "$KEYS_LINE" 'ab'
     assert_contains 'by rubbing the character out in place' \
         "$KEYS_ECHO" "$(printf '\b \b')"

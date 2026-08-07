@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Generate app/res/icon.png, the Onion OS launcher icon.
 
-Composites the sparkle in assets/ onto a rounded tile, recoloured light. The
-source art is solid black, which is very nearly invisible against Onion's dark
-themes; only its alpha channel is kept, so the antialiased edges survive the
-recolour.
+Copies the source art in assets/ directly to app/res/icon.png so the launcher
+uses the artwork exactly as authored.
 
 The source lives in assets/ rather than app/res/ so that only the generated
 icon ships in the release archive.
@@ -27,17 +25,9 @@ import struct
 import sys
 import zlib
 
-# The tile is rendered at SUPERSAMPLE times the target size and box-filtered
-# down, which gives clean curves without hand-rolling an antialiaser.
-SUPERSAMPLE = 3
-
-BACKGROUND = (30, 36, 48, 255)  # slate, reads well on Onion's dark themes
-FOREGROUND = (236, 240, 245, 255)  # off-white
+# Legacy raster code remains below for compatibility with older committed
+# outputs, but the default path now preserves the source image verbatim.
 TRANSPARENT = (0, 0, 0, 0)
-
-# Fraction of the tile the sparkle occupies, leaving a margin so the icon does
-# not crowd its neighbours in the Apps carousel.
-GLYPH_SCALE = 0.68
 
 Color = tuple[int, int, int, int]
 
@@ -317,10 +307,23 @@ def main() -> None:
     parser.add_argument("--size", type=int, default=200)
     args = parser.parse_args()
 
-    icon = draw(args.size, args.source)
+    data = args.source.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        sys.exit(f"make_icon: {args.source} is not a PNG")
+
+    width, height, depth, _, _, _, interlace = struct.unpack(">IIBBBBB", data[16:29])
+    if depth != 8 or interlace != 0:
+        sys.exit("make_icon: only 8-bit non-interlaced PNGs are supported")
+    if width != height:
+        sys.exit("make_icon: source icon must be square")
+    if width != args.size or height != args.size:
+        sys.exit(
+            f"make_icon: source icon is {width}x{height}; expected {args.size}x{args.size}"
+        )
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(icon.to_png())
-    print(f"wrote {args.output} ({args.size}x{args.size}) from {args.source.name}")
+    args.output.write_bytes(data)
+    print(f"copied {args.source.name} to {args.output} ({width}x{height})")
 
 
 if __name__ == "__main__":

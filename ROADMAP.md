@@ -12,10 +12,9 @@ after the cheap work has proved it is the right work.
 
 Ask a question without putting the game down.
 
-You are stuck on a boss. You press a button combination, the game freezes where it is, a
-panel fades up over it already holding *"I'm playing Chrono Trigger — "*, you type only
-the part that is actually your question, you read the answer, you press the combination
-again and the frame you left resumes.
+You are stuck on a boss. You get to the app, and it is already holding *"I'm playing
+Chrono Trigger — "*. You type only the part that is actually your question, read the
+answer, and go back to the frame you left.
 
 That is a use case no desktop client has, and it is the reason to run this on a handheld
 rather than reach for the phone sitting next to it.
@@ -24,27 +23,26 @@ rather than reach for the phone sitting next to it.
 
 ## 2. Why this is not one feature
 
-It reads like an extension of the app. It is not, and the reason is worth being exact
-about, because it decides the whole shape of the work.
+It reads like an extension of the app. It is not, and the reason decides the whole shape
+of the work.
 
 Everything built so far runs inside `st`, Onion's terminal. That is what gives us the
 on-screen keyboard for free, and it is why a shell script is a viable client at all. It
 also rules out three things at once:
 
-- **A terminal cannot be translucent.** It draws opaque character cells. There is no
-  alpha anywhere in the model.
+- **A terminal cannot be translucent.** It draws opaque character cells. There is no alpha
+  anywhere in the model.
 - **A terminal cannot appear over a running game.** The emulator owns the framebuffer and
   rewrites it every frame. Anything drawn over it is gone in about sixteen milliseconds.
 - **There is no compositor.** The Miyoo has one framebuffer and nothing that stacks
-  surfaces onto it. "Windows on top of other windows" is not a service this system offers.
+  surfaces onto it. "Windows over other windows" is not a service this system offers.
 
 So a translucent panel over a live game is not a flag we pass to `st`. It is a program
 that reads `/dev/fb0`, blends its own pixels with what the game last drew, renders text
-with its own font, and reads `/dev/input/event0` itself. That is C, and it is the
-cross-compile path `PLAN.md` §13 defers.
+with its own font, and reads `/dev/input/event0` itself.
 
-None of that argues against doing it. It argues against starting there — because two
-thirds of what makes the idea good can be had without any of it.
+None of that argues against doing it. It argues against starting there — because most of
+what makes the idea good needs none of it.
 
 ---
 
@@ -52,81 +50,15 @@ thirds of what makes the idea good can be had without any of it.
 
 Today the whole install is: copy a folder onto the card, open it from Apps, set a key.
 Nothing is registered, nothing runs at boot, nothing is patched. Uninstalling is deleting
-the folder. That property is worth more than any single feature here, and it constrains
-the staging rather than falling out of it.
+the folder. That property is worth more than any single feature here.
 
-Where each stage leaves it:
+Stages A, B and D leave it untouched. A and B are code inside the app. D is a
+cross-compiled binary, which for the user is still just a file in the folder being copied
+— the toolchain cost is ours at build time, not theirs at install time, and the release
+stays a zip of `App/DPadChat/`.
 
-- **Stage A — unchanged.** It is code inside the app.
-- **Stage C — unchanged, for the user.** A cross-compiled binary is still just a file in
-  the folder that gets copied. The toolchain cost is ours, at build time; nobody installing
-  it needs a compiler, and the release stays a zip of `App/DPadChat/`.
-- **Stage B — this is the one that can break it**, and it is the real reason research
-  question 1 matters.
-
-A hotkey has to be watched while the app is *not* running. Something must therefore be
-alive that we did not start by being opened from the menu, and how it comes to be alive
-decides the install story:
-
-1. **Onion's in-game menu can be extended by a file in our own folder.** Nothing changes:
-   still copy a folder, and the hotkey works because Onion already watched for it.
-2. **Onion has a supported hook for starting something at boot from an App folder.** Also
-   fine — a file we ship, not a step anyone runs.
-3. **Onion's own files have to be modified.** This is the bad outcome. It turns installing
-   into "copy the folder, then run this", uninstalling into something that leaves traces,
-   and an Onion update into something that can silently switch the feature off. **I would
-   argue for not shipping B at all rather than shipping that**, or at most shipping it as
-   something clearly opt-in and clearly separate.
-
-### `/background` — the way out of 3
-
-If 1 and 2 both fail, the answer is not to install anything. It is to let the user arm it
-themselves, from inside the app: **`/background` detaches a watcher and returns to the
-menu.** Go and play; the chord works; run it again to switch it off.
-
-This is better than arming it from `launch.sh`, which was the earlier idea here, and
-better for a reason worth stating: **it is consented to.** A background process that
-appears because someone opened an app once is a surprise. One that appears because they
-typed `/background` is a feature, and one they can reason about, find and stop. `/about`
-should report whether it is armed, because a thing you cannot see the state of is a thing
-you cannot trust.
-
-It also keeps §2a intact with nothing left over. No boot hook, no patched OS files,
-nothing to undo at uninstall except stopping a process we started. Someone who never runs
-the command never has anything running.
-
-**What it does not solve.** Consent and installation are one of three hard parts. The
-other two are unaffected: taking the screen from a suspended emulator is still research
-question 3, and watching the input device cheaply is still open — see below, because it is
-the part that may force our hand.
-
-### The cost of watching input
-
-A watcher is idle until a button is pressed. During a game, buttons are pressed
-constantly, and every one of them wakes it. In shell that means a fork per press, in the
-middle of the one activity where the CPU is already committed and the battery is the
-thing being spent.
-
-That may be what forces a small native helper — and it is worth noting how small. An input
-watcher that blocks on `/dev/input/event0`, matches a chord and signals is perhaps a
-hundred lines of C, against the full framebuffer-blending UI of stage C. If a compiler
-becomes necessary, it becomes necessary here first, and far more cheaply.
-
-It changes nothing about §2a either way: a compiled watcher is another file in the folder
-being copied.
-
-### Lifecycle, if a watcher exists
-
-Not difficulties, but they have to be answered rather than discovered:
-
-- `/uninstall` must stop it. Deleting the folder underneath a running watcher is the
-  worst version of this.
-- `/update` replaces the app while a watcher from the previous version is still running
-  and still pointing at the old paths. It should be stopped and re-armed, or refuse.
-- A watcher whose app has gone should exit rather than linger.
-- Whatever `/background` starts has to survive the app exiting, which means detaching from
-  the process group Onion launched us in — and whether that survives Onion regaining
-  control is itself worth checking early, because the whole idea rests on it.
+**Stage C is the only one that could break it**, because a hotkey must be watched while
+the app is not running. `/background` in §5 is how it does not.
 
 ---
 
@@ -141,12 +73,6 @@ it works in `st` today.
 The point is the typing. A character costs about five button presses, so a forty-character
 opener is two hundred presses. Accepting it with one is the whole feature.
 
-### Why it comes first
-
-It is the part of the idea that carries the value, and it is completely independent of the
-overlay. If stages B and C never happen, this still earns its place — a suggested opener
-is worth having at a prompt you reached from the menu, too.
-
 ### Design notes
 
 - **Right is free.** On an empty line `_input_right` returns immediately, so nothing is
@@ -155,44 +81,129 @@ is worth having at a prompt you reached from the menu, too.
   `INPUT_LINE`. `_input_redraw` clears what the line used to be longer by, so the ghost's
   length has to be counted in that accounting or dismissing it will leave it on screen.
 - **X almost certainly cannot cancel it.** X is `st`'s keyboard toggle and is very likely
-  consumed there, so the app never sees a byte — see the research questions. It does not
-  matter: "anything but Right dismisses" reaches the same place without a special key.
-- **The suggestion source is pluggable, and that is deliberate.** Stage A ships with
-  static suggestions from a config file. Making them game-aware is a change of source, not
-  of mechanism, so A does not wait on any of the Onion research below.
-- **It shares a slot with the follow-up cycler** in §6. If both happen, a live suggestion
+  consumed there, so the app never sees a byte. It does not matter: "anything but Right
+  dismisses" reaches the same place without a special key.
+- **The suggestion source is pluggable, and that is deliberate.** A ships with static
+  suggestions from a config file; stage B changes where the text comes from, not how it
+  behaves. A therefore waits on nothing.
+- **It shares a slot with the follow-up cycler** in §8. If both happen, a live suggestion
   takes the slot while it is showing and the cycler has it otherwise.
 
 ---
 
-## 4. Stage B — summon it over a running game
+## 4. Stage B — game-aware, using the switching Onion already does
 
-**Full-screen and opaque. No transparency, but the actual behaviour.**
+**Still no daemon, no suspend, no new process. Possibly the whole feature.**
 
-A watcher on `/dev/input/event0` for a button chord, `SIGSTOP` on the emulator, the app in
-the foreground, `SIGCONT` when it exits. Armed by `/background` rather than by anything
-installed — see §2a, which is where most of the design of this stage actually lives.
+Onion can switch away from a running game to an app. If that is so, the entire mechanism
+for *getting to the app mid-game* already exists and is somebody else's code to maintain.
+What is left for us is small:
 
-Onion's own in-game menu already suspends a running game to draw over it, so the pattern
-is proven on this hardware — the question is only how much of it can be borrowed rather
-than rebuilt.
+> On startup, work out whether a game is running or was just left, and if so make the
+> stage A suggestion be about it.
 
-This is where the idea becomes real. It is also, I would guess, most of the felt value:
-the difference between *asking without putting the game down* and *asking without putting
-the game down, prettily*.
+That is a config read and a string, not a daemon. It needs answers to research questions 1
+and 2 and nothing else.
 
-### What makes it uncertain
+**This is the cheapest possible version of the idea, and it may be the only one worth
+building.** It should be attempted before stage C is designed at all, because if switching
+is pleasant enough in practice, a custom chord is a convenience rather than a feature — and
+convenience does not justify a background process.
 
-Its cost is not known within an order of magnitude yet, and that is entirely down to
-research question 1. If Onion's in-game menu can be extended, B is a small piece of
-integration. If it cannot, B is a daemon that has to be correct about process groups,
-input grabbing and resume, and that is a different size of job.
-
-**Nothing should be estimated here until that question is answered.**
+What it does not give you is the *speed* of the idea in §1: a chord is one gesture, and
+going out to a menu and picking an app is several. Whether that gap matters is a question
+about how it feels, and the only way to answer it is to build B and use it.
 
 ---
 
-## 5. Stage C — the translucent overlay
+## 5. Stage C — a chord that summons it directly
+
+**A watcher on the input device, armed by the user. Only worth building if B proves the
+menu route too slow.**
+
+A watcher on `/dev/input/event0` for a held button combination, `SIGSTOP` on the emulator,
+the app in the foreground, `SIGCONT` when it exits.
+
+### `/background`, and why the install story survives
+
+The watcher has to be alive while the app is not, so something must exist that opening the
+app did not start. Rather than install anything, **the user arms it: `/background`
+detaches a watcher and returns to the menu.** Go and play; the chord works; run it again to
+switch it off.
+
+This is better than starting it at boot, for a reason worth stating: **it is consented
+to.** A background process that appears because someone opened an app once is a surprise.
+One that appears because they typed `/background` is a feature, and one they can find,
+reason about and stop. `/about` should report whether it is armed, because a thing whose
+state you cannot see is a thing you cannot trust.
+
+It keeps §2a intact with nothing left over — no boot hook, no patched OS files, nothing to
+undo at uninstall except stopping a process we started. Someone who never runs the command
+never has anything running.
+
+### Reading input while a game runs
+
+The obvious worry is that an emulator holds the input device exclusively, or that watching
+it costs too much during play. **Onion's own volume and brightness hotkeys work during a
+game**, which is good evidence that a second reader is possible and is not ruinous. It is
+evidence rather than proof — Onion's `keymon` is compiled, and ours might not be.
+
+That is the real question: a watcher is idle until a button is pressed, and during a game
+buttons are pressed constantly. In shell that is a fork per press, in the middle of the one
+activity where the battery is the thing being spent.
+
+That may be what forces a compiler — and it is worth noting how cheaply. A watcher that
+blocks on an input device, matches a chord and signals is perhaps a hundred lines of C,
+against the framebuffer-blending UI of stage D. If a compiler becomes necessary it becomes
+necessary here first, and far more cheaply. It changes nothing about §2a either way.
+
+### Lifecycle, if a watcher exists
+
+Not difficulties, but they have to be answered rather than discovered:
+
+- `/uninstall` must stop it. Deleting the folder underneath a running watcher is the worst
+  version of this.
+- `/update` replaces the app while a watcher from the previous version is still running and
+  still pointing at the old paths. Stop and re-arm, or refuse.
+- A watcher whose app has gone should exit rather than linger.
+- Whatever `/background` starts must survive the app exiting, which means detaching from
+  the process group Onion launched us in. The whole stage rests on that — research
+  question 5.
+
+---
+
+## 6. Configuring the trigger
+
+Stage C needs settings, and `app/lib/config.sh` already has the shape for them: a
+whitelist of known keys, a default, and validation that warns and falls back rather than
+letting a bad value surface later as something confusing.
+
+```
+# Buttons that summon the app while a game is running, and how long they must
+# be held. Names are the device's own, not any emulator's mapping of them.
+trigger_buttons=l2+r2
+trigger_hold=5
+```
+
+- `trigger_buttons` — validated against the set of buttons the device actually reports.
+  An unknown name warns and falls back to the default, exactly as `base_url` and `stream`
+  already do.
+- `trigger_hold` — seconds, through `_config_require_positive_int`.
+
+**On `l2+r2` held for five seconds.** Reading `/dev/input` directly means we are not
+limited to what `st` maps, so any button the hardware reports is available — including ones
+the terminal ignores. `L2` and `R2` are a good choice precisely because `st` does not use
+them, so nothing is stolen from the keyboard. What still needs confirming is the event
+codes the Mini Plus reports for them, which is research question 4.
+
+Five seconds is deliberately long: both triggers are held together in real games, and a
+false summon mid-boss is worse than a slow one. I would expect most people to lower it once
+they trust it, which is the argument for it being a setting rather than a constant. The
+default should stay conservative.
+
+---
+
+## 7. Stage D — the translucent overlay
 
 **A native binary. The v2 toolchain, plus framebuffer work not yet in `PLAN.md`.**
 
@@ -201,22 +212,23 @@ Copy it, blend it toward black, draw the panel and the text over the result, put
 The blend is a few hundred kilobytes of arithmetic per summon and is not where any
 difficulty lies.
 
-The difficulty is everything a terminal was doing for us: glyph rendering, input decoding,
-the on-screen keyboard. `st` supplies all three today and none of it survives the move.
+The difficulty is everything the terminal was doing for us: glyph rendering, input
+decoding, the on-screen keyboard. `st` supplies all three today and none of it survives
+the move.
 
 ### Why it is last
 
-A proves the interaction is worth having. B proves the summon works and is pleasant. C is
-presentation — the stage that makes it feel like part of the system rather than an app
-that rudely takes the screen. Doing it first would mean building the expensive thing before
-knowing whether the cheap thing was right.
+B proves the idea is worth having. C proves the summon is worth a background process. D is
+presentation — the stage that makes it feel like part of the system rather than an app that
+rudely takes the screen. Doing it first means building the expensive thing before knowing
+whether either of the cheap ones was enough.
 
-Consistent with `PLAN.md` §13: if C happens, the shell version stays as the fallback path
+Consistent with `PLAN.md` §13: if D happens, the shell version stays as the fallback path
 and the reference implementation.
 
 ---
 
-## 6. Independent of all of the above
+## 8. Independent of all of the above
 
 Smaller work that stands on its own, roughly in the order I would take it.
 
@@ -230,48 +242,39 @@ Smaller work that stands on its own, roughly in the order I would take it.
 
 ---
 
-## 7. To find out before B or C can be costed
+## 9. To find out
 
-Ordered by how much they change the plan. The first one is worth more than the rest
-together.
+Ordered so that the cheap answers that could cancel expensive work come first.
 
-1. **Is Onion's in-game menu extensible, and can anything be started at boot from an App
-   folder?** If an entry can be added to something that already knows how to suspend a game
-   and take the screen, most of stage B disappears and some of C gets easier. If not, both
-   get substantially larger.
-
-   This decides how large stage B is. It no longer decides the install story — `/background`
-   in §2a settles that on its own, by having the user arm the watcher rather than
-   installing one. *Read Onion's `keymon`, its in-game menu, and whatever
-   `/mnt/SDCARD/.tmp_update` does at startup.*
-
-   Worth answering anyway even though it is no longer blocking: if Onion already watches
-   for a chord we can borrow, there is no watcher to write, and the input-cost problem
-   below disappears with it.
-2. **Where does Onion record the game currently running?** Needed for the game-aware
-   prefill regardless of which stage delivers it.
-3. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage B may
-   not need a native binary at all. If the emulator holds the framebuffer in a way that
-   survives being stopped, B needs more of C than assumed.
-4. **Does X reach the app at all?** Decides whether stage A can bind it, and is one line
-   of testing on hardware: press X at the prompt and see whether any byte arrives.
-5. **Framebuffer geometry and pixel format.** For C. We know the text grid is 53×30 and
-   that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
+1. **Can Onion switch from a running game to an App, and what does it leave the game in?**
+   This is the whole of stage B, and if it is a good experience it may cancel stage C.
+   Answerable in a minute on hardware: start a game, switch to D-Pad Chat, see what
+   happens — and then see whether the game is still there afterwards.
+2. **Where does Onion record the game currently running, or last run?** Needed for the
+   game-aware prefill regardless of which stage delivers it.
+3. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
+   testing: press X at the prompt and see whether any byte arrives.
+4. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
+   device directly means `st`'s mapping does not constrain us, but the codes have to be
+   known.
+5. **Does a process started by the app survive the app exiting?** `/background` rests
+   entirely on this. Onion regains control when an app exits and may take the process group
+   with it; `setsid` is the usual answer, but whether it is enough here is untested.
+6. **What a shell input watcher costs during a game.** Every button press wakes it. If that
+   is measurable against the emulator, the watcher wants to be the small native helper in
+   §5 rather than a loop in `sh`.
+7. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
+   not need a native binary at all.
+8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
+   and that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
    but the format has not been looked at.
-6. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
+9. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
    its allocation. Shell plus `curl` plus `jq` is small, but it has not been measured
    against a running game.
-7. **Does a process started by the app survive the app exiting?** `/background` rests
-   entirely on this. Onion regains control when an app exits and may take the process group
-   with it; `setsid` is the usual answer, but whether it is enough here has not been tested.
-   Cheap to answer and worth answering before anything else in stage B is designed.
-8. **What a shell input watcher costs during a game.** Every button press wakes it. If that
-   is measurable against the emulator, the watcher wants to be the small native helper
-   described in §2a rather than a loop in `sh`.
 
 ---
 
-## 8. Deliberately not doing
+## 10. Deliberately not doing
 
 - **Markdown rendering.** Fifty-three columns and a bitmap font. A lot of code for very
   little that would be legible at the end of it.
@@ -279,6 +282,6 @@ together.
   when the screen holds thirty rows.
 - **Themes, and a UI for switching model.** Both are config edits, and config edits are
   fine.
-- **Anything needing a compiler before stage C.** The property that this installs by
-  copying a folder onto a card, with no toolchain anywhere, is worth more than any single
+- **Anything needing a compiler before it is unavoidable.** The property that this installs
+  by copying a folder onto a card, with no toolchain anywhere, is worth more than any single
   feature that would cost it.

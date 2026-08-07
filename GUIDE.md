@@ -346,6 +346,16 @@ It refuses any host without a `/mnt/SDCARD/.tmp_update` on it, so a mistyped add
 happens to answer SSH is not restarted. Use `tools/reboot.sh --print-remote` to see
 exactly what would run on the device.
 
+**It needs the device to be reachable, and a running game may be enough to stop that.**
+Trying it with a game in the foreground gave `Connection refused` — something answered at
+that address and rejected port 22, so the device was either off the network or not
+listening. Pressing **Menu** to come out of the game first is the workaround. If the
+address itself is in doubt, check it under Tweaks > Network on the device, since a device
+that drops off WiFi can come back on a different one.
+
+That is a real limit of doing this over SSH rather than on the device, and it is worth
+knowing before reaching for it mid-game.
+
 **On `cmd_to_run.sh`, and what is actually known.** It was absent on a running device with
 a game going, and absent again just after a boot — both measured, not read somewhere. What
 fits that, and Onion's own instruction to delete it *with the card in a PC*, is that it is

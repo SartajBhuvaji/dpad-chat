@@ -65,6 +65,7 @@ Options:
   --keep-resume     leave a stale auto-resume file alone rather than clearing it
   --yes             do not ask
   --print-remote    print what would run on the device, and stop
+  --explain N       print what exit status N would be reported as, and stop
 
 Unsaved game progress is lost: this does not wait for the emulator to write a
 save state the way holding POWER does.
@@ -181,6 +182,33 @@ confirm() {
     esac
 }
 
+# ssh reports its own failures as 255 and passes the remote command's status
+# through otherwise, so the number separates "could not get there" from "got
+# there and was told no". Those read as the same thing to somebody looking at a
+# device that did not restart, and they call for completely different actions.
+explain_failure() {
+    case "$1" in
+        255)
+            printf 'could not reach %s, so nothing was restarted.\n' "$SSH_TARGET"
+            printf '  SSH has to be on - Tweaks > Network - and the device has to be\n'
+            printf '  on WiFi. A game in the foreground may be enough to take it off:\n'
+            printf '  press Menu to come out of one and try again.'
+            ;;
+        4)
+            printf 'that host answered but has no %s/.tmp_update on it, so it is\n' \
+                "$REMOTE_CARD"
+            printf '  not an Onion device, and nothing was restarted.\n'
+            printf '  Check the address.'
+            ;;
+        3)
+            printf 'the device has no %s command, so nothing was restarted.' "$ACTION"
+            ;;
+        *)
+            printf 'the device reported status %s, and nothing was restarted.' "$1"
+            ;;
+    esac
+}
+
 run_ssh() {
     command -v ssh >/dev/null 2>&1 || fail 'ssh is required'
 
@@ -203,9 +231,10 @@ run_ssh() {
 
     # The part that can fail, and reports why. Sent on stdin so no part of it
     # reaches the remote process list.
+    _rc=0
     # shellcheck disable=SC2086
-    remote_script | ssh $SSH_OPTS "$SSH_TARGET" 'sh -s' ||
-        fail 'the device refused, and nothing was restarted'
+    remote_script | ssh $SSH_OPTS "$SSH_TARGET" 'sh -s' || _rc=$?
+    [ "$_rc" -eq 0 ] || fail "$(explain_failure "$_rc")"
 
     # And the part that cannot be checked, because a successful one takes the
     # connection with it. Backgrounded behind a short sleep so ssh can close
@@ -229,6 +258,7 @@ main() {
     KEEP_RESUME=0
     ASSUME_YES=0
     PRINT_ONLY=0
+    EXPLAIN=''
     HOST=''
 
     while [ $# -gt 0 ]; do
@@ -238,6 +268,11 @@ main() {
             --keep-resume) KEEP_RESUME=1 ;;
             -y | --yes) ASSUME_YES=1 ;;
             --print-remote) PRINT_ONLY=1 ;;
+            --explain)
+                [ $# -ge 2 ] || fail '--explain needs a status'
+                EXPLAIN="$2"
+                shift
+                ;;
             -*) fail "unknown option: $1" ;;
             *)
                 [ -z "$HOST" ] || fail 'give one host'
@@ -246,6 +281,13 @@ main() {
         esac
         shift
     done
+
+    if [ -n "$EXPLAIN" ]; then
+        SSH_TARGET="${HOST:-the device}"
+        explain_failure "$EXPLAIN"
+        printf '\n'
+        return 0
+    fi
 
     if [ "$PRINT_ONLY" -eq 1 ]; then
         remote_script

@@ -270,6 +270,47 @@ assert_contains 'reboot is the default' \
     "$(DPAD_REMOTE_CARD="$CARD" "$TOOL" --print-remote)" "ACTION='reboot'"
 
 # -----------------------------------------------------------------------------
+# Saying why it did not happen
+# -----------------------------------------------------------------------------
+
+printf '\nSaying why it did not happen\n'
+
+# "It did not restart" looks the same however it failed, and the causes call
+# for completely different things: turn SSH on, fix the address, or nothing at
+# all because the host was never the device. ssh reports its own failures as
+# 255 and passes the remote status through otherwise, so the number is what
+# separates them - and getting that wrong tells somebody the device refused
+# when the connection never opened.
+out=$("$TOOL" --explain 255 192.168.1.42)
+assert_contains 'a connection failure blames the connection' "$out" 'could not reach'
+assert_contains 'and names the host' "$out" '192.168.1.42'
+assert_contains 'and says what to check' "$out" 'Tweaks > Network'
+assert_not_contains 'and does not blame the device' "$out" 'the device has no'
+
+out=$("$TOOL" --explain 4 192.168.1.42)
+assert_contains 'a wrong host says the host answered' "$out" 'answered but has no'
+assert_contains 'and says to check the address' "$out" 'Check the address'
+
+out=$("$TOOL" --explain 3)
+assert_contains 'a missing applet names it' "$out" 'no reboot command'
+
+out=$("$TOOL" --explain 3 --off)
+assert_contains 'and follows the action' "$out" 'no poweroff command'
+
+out=$("$TOOL" --explain 9)
+assert_contains 'anything else reports the status' "$out" 'status 9'
+
+# Whatever went wrong, the one thing that must be said every time is that the
+# device is as it was.
+for _status in 255 4 3 9; do
+    assert_contains "status $_status says nothing was restarted" \
+        "$("$TOOL" --explain "$_status")" 'nothing was restarted'
+done
+
+out=$("$TOOL" --explain 2>&1) && rc=0 || rc=$?
+assert_eq '--explain needs a status' "$rc" '1'
+
+# -----------------------------------------------------------------------------
 # The command line
 # -----------------------------------------------------------------------------
 

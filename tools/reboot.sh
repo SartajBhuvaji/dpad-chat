@@ -6,28 +6,30 @@
 # records what was running in .tmp_update/cmd_to_run.sh and replays it, which is
 # why a power cycle mid-game comes back into the game.
 #
-# What is known about that file, and what is not:
+# When that file exists has been guessed at twice and got wrong twice, so what
+# follows is only what was measured on a device:
 #
-#   - It was absent while a game was running, and absent again just after a
-#     boot. Both were measured on a device, not read somewhere.
-#   - Onion's FAQ has you delete it to escape a ROM that black-screens on every
-#     boot - and has you do it with the card in a PC, not over SSH.
+#   just after a boot ................................. absent
+#   after Menu out of a game, first reading ........... absent
+#   after Menu out of a game, second reading .......... PRESENT
+#   while a game is in the foreground ................. cannot say; the device
+#                                                       is not reachable then
 #
-# The reading that fits all of that is that it is written as the device shuts
-# down and consumed at boot when it is replayed, so it exists only while the
-# device is off. Which means the clear below is not what makes a restart come up
-# clean: by the time this runs there is normally nothing there to clear. It
-# catches a stale one left by an unclean shutdown, which is exactly the
-# boot-loop case, and that is worth doing on its own.
+# The two middle readings are the same described action with opposite results,
+# and nothing here explains that - most likely those were different actions,
+# with one game exited and the other left running, but that is a guess and it
+# is labelled as one. Onion's FAQ has you delete this file to escape a ROM that
+# black-screens on every boot, and has you do it with the card in a PC.
+#
+# What that is enough to say: the clear below is not decoration. It found a
+# file and removed one. Beyond that, no rule about when it exists is claimed.
 #
 # Whether a restart from here lets Onion write a fresh one on the way down is
-# not established. busybox reboot signals init, init signals everything else,
-# and whether MainUI does its usual bookkeeping on the way out is not something
-# this script can see. It is one experiment away - start a game, run this, see
-# where it comes back - and the answer changes nothing about what to run, only
-# what to claim.
+# also unestablished. busybox reboot signals init, init signals everything
+# else, and whether MainUI does its usual bookkeeping on the way out is not
+# something this script can see.
 #
-# So this is three things in order: clear any stale auto-resume, flush the card,
+# So this is three things in order: clear any auto-resume, flush the card,
 # restart.
 #
 # It costs whatever the running emulator has not written. That is the point -
@@ -125,12 +127,10 @@ if ! command -v "$ACTION" >/dev/null 2>&1; then
     exit 3
 fi
 
-# Onion records what was running here and replays it on the next boot. On a
-# device that shut down cleanly this is normally absent - it appears to be
-# consumed when it is replayed - so "was not set" is the ordinary answer and
-# not a sign anything went wrong. What this catches is one left behind, which
-# is Onion's own documented way out of a ROM that black-screens every time it
-# resumes.
+# Onion records what was running here and replays it on the next boot, so
+# removing it is what stops the next boot going back where this one was. It has
+# been found both present and absent on a device that was up, which is why
+# neither answer below is worded as the surprising one.
 resume="$CARD/.tmp_update/cmd_to_run.sh"
 
 if [ "$KEEP_RESUME" -eq 1 ]; then

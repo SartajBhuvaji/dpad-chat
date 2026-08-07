@@ -185,9 +185,9 @@ else
     fail 'and the file survives'
 fi
 
-# The ordinary case, and by some distance: the file appears to be consumed at
-# boot, so a device that is up normally has none. Not an error, and worth
-# wording as such rather than as a clear that did not happen.
+# The file has been found both present and absent on a device that was up, so
+# neither answer is the surprising one and neither is an error. This is the
+# absent side.
 rm -rf "$CARD" "$RAN"
 mkdir -p "$CARD/.tmp_update"
 : >"$RAN"

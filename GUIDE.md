@@ -356,14 +356,23 @@ that drops off WiFi can come back on a different one.
 That is a real limit of doing this over SSH rather than on the device, and it is worth
 knowing before reaching for it mid-game.
 
-**On `cmd_to_run.sh`, and what is actually known.** It was absent on a running device with
-a game going, and absent again just after a boot — both measured, not read somewhere. What
-fits that, and Onion's own instruction to delete it *with the card in a PC*, is that it is
-written as the device shuts down and consumed at boot when it is replayed: it exists only
-while the device is off. So `resume: nothing to clear` is the ordinary answer here, and
-what the clear really catches is one left behind by an unclean shutdown — the boot-loop
-case. Whether restarting this way lets Onion write a fresh one on the way down has not
-been established.
+**On `cmd_to_run.sh`, and what is actually known.** When it exists has been guessed at
+twice and got wrong twice, so this is only what was measured:
+
+| When | Present? |
+| --- | --- |
+| just after a boot | no |
+| after Menu out of a game, first reading | no |
+| after Menu out of a game, second reading | **yes** |
+| while a game is in the foreground | cannot say — the device is not reachable then |
+
+The two middle rows are the same described action with opposite results, and nothing
+explains that yet. The likeliest guess is that they were different actions — one game
+exited, the other left running — but it is a guess.
+
+Enough follows to be useful: the clear is not decoration, since it has found a file and
+removed one. No rule about when the file exists is claimed here, and whether restarting
+this way lets Onion write a fresh one on the way down is still unestablished.
 
 ---
 

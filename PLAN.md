@@ -444,11 +444,11 @@ Onion writes them in. It is a better one than `type`, which is 5 against 3 in th
 but is a number whose meaning we would be guessing at.
 
 **Nothing distinguishes "a game is loaded right now" from "a game was played last week".**
-The `.tmp_update/cmd_to_run.sh` that would have said so was not on the card even when a
-game was running, and was absent again when the card was read just after a boot. It is
-Onion's auto-resume file, written as the device shuts down and consumed at boot when it is
-replayed, so it exists only while the device is off and can never report what is running
-while it is on. It is not in the design. That gap would matter a great deal if
+Onion's auto-resume file, `.tmp_update/cmd_to_run.sh`, was not on the card when it was
+read with a game running, so it is not in the design. It has since been found present on
+another reading taken the same way, which is recorded in ROADMAP.md §4 along with what
+that might mean; it is two disagreeing observations rather than a signal, and stage B
+neither has it nor needs it. That gap would matter a great deal if
 the name were fed to the model silently — it is not. It is ghost text that does nothing
 until Right is pressed, so a stale suggestion costs one dismissal, the same as any other
 suggestion that was not wanted. **The interaction absorbs the uncertainty**, which is why

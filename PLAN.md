@@ -388,6 +388,43 @@ pollutes the capture — by polling the terminal for ECHO to clear before writin
 That is deterministic where a `sleep` is not, and it doubles as proof that raw mode was
 entered at all.
 
+### 5.2 Suggesting an opening
+
+A character costs around five button presses on a d-pad, so a forty-character opener is
+two hundred of them. Offering one that **Right** accepts whole is the difference between
+asking a question mid-game and not bothering, and it is the mechanism ROADMAP.md stage A
+is built on.
+
+The suggestion is drawn dim, past the cursor, on the first prompt of a session. **Right**
+takes it and adds the space after it; **every other key** takes it away and is then
+handled as though it had never been there.
+
+- **The ghost is never in the buffer.** It reaches neither half of the split line, so
+  there is no path by which it can be submitted. Nothing is ever sent that the user did
+  not type or accept, which is what makes a suggestion they did not want cost exactly one
+  keypress — and is why a suggestion may be built from something as unreliable as "the
+  most recent entry in Onion's list".
+- **It is counted in the redraw's length even so.** The redraw covers what the line used
+  to be longer by, so the ghost's columns have to be in that accounting or dismissing it
+  would leave it on screen. That is the whole implementation: set a flag, redraw.
+- **Right is free.** On an empty line the cursor cannot move right, so binding it displaces
+  nothing. The suggestion only exists on an empty line, so there is no state in which the
+  two meanings compete.
+- **ESC is the one byte held back from the dismiss.** Which key an escape sequence belongs
+  to is not known until the rest of it has been read, and Right arrives as one.
+- **It must be printable ASCII or it is refused, silently.** The cursor arithmetic counts
+  characters as columns, which multi-byte text breaks, and a control byte would be an
+  escape sequence the terminal obeys rather than text it draws — `settings.cfg` is a file
+  on a card that anyone can edit.
+- **Undimmed, it is not offered at all.** Ghost text indistinguishable from what the user
+  typed is worse than no suggestion, so under `NO_COLOR` there simply is not one.
+- **One shot.** `input_readline` clears it, so how often a suggestion appears is decided
+  by whoever sets it. The REPL sets one before its first prompt and never again: by the
+  second there is a conversation under way that the same sentence would only interrupt.
+
+Where the text comes from is deliberately not the editor's business. Today it is the
+`suggest` setting; stage B changes the source, not the behaviour.
+
 ---
 
 ## 6. Response rendering

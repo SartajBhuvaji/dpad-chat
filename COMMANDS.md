@@ -177,6 +177,31 @@ a new chat but leaves the recall list alone; closing the app empties it.
 
 ---
 
+## Suggested openings
+
+If `suggest` is set, the first prompt of a session comes up already holding it, greyed
+out:
+
+```
+> I'm playing Chrono Trigger.
+```
+
+That text is not in your message. **Right** takes it, leaves a space after it, and puts
+the cursor there so you carry straight on typing. **Any other key** takes it away and is
+then handled normally — so if you had something else to ask, just start typing it and the
+suggestion is gone.
+
+It is offered once, at the first prompt. By the second there is a conversation under way,
+and the same sentence again would only be in the way.
+
+Forty characters is around two hundred button presses on a d-pad. Accepting them with one
+is the entire point of it.
+
+Nothing is ever sent that you did not either type or accept, which is what makes a
+suggestion you did not want cost exactly one keypress.
+
+---
+
 ## The status bar
 
 Two rows stay put while the conversation scrolls between them.
@@ -217,6 +242,7 @@ timeout = 60
 history_messages = 10
 replay_messages = 4
 stream = true
+suggest = I'm playing Chrono Trigger.
 ```
 
 | Key | Default | What it does |
@@ -231,6 +257,7 @@ stream = true
 | `history_messages` | `10` | messages resent each turn, besides the system prompt |
 | `replay_messages` | `4` | messages redrawn on screen when a chat resumes |
 | `stream` | `true` | show the reply as it is generated |
+| `suggest` | *(none)* | an opening offered at the first prompt; see above |
 | `github_token` | *(none)* | only used by `/update`; see below |
 
 Lines beginning with `#` are comments. Spaces around the `=` are fine. Unknown keys are
@@ -256,6 +283,12 @@ lets the terminal wrap, which can split a word across lines. `false` wraps clean
 boundaries, at the cost of a five-to-ten-second freeze with nothing on screen — and the
 device gives no other sign that it is working.
 
+**`suggest`** must be printable ASCII. The cursor arithmetic at the prompt counts
+characters as columns, which accented or non-Latin text breaks, and a control character
+would be an escape sequence the terminal obeys rather than text it draws. Anything else is
+ignored and the prompt comes up plain. Trailing spaces are trimmed off every value in this
+file, but you do not need one: accepting a suggestion adds the space itself.
+
 **`github_token`** is optional and only touched by `/update`. This repository is public, so
 release metadata is served with no credential at all. Set it only if you are running a
 fork whose repository is private, or if you hit GitHub's unauthenticated rate limit.
@@ -276,6 +309,7 @@ points the app at a mock server without writing a file.
 | `DPAD_HISTORY_MESSAGES` | `history_messages` |
 | `DPAD_REPLAY_MESSAGES` | `replay_messages` |
 | `DPAD_STREAM` | `stream` |
+| `DPAD_SUGGEST` | `suggest` |
 | `DPAD_GITHUB_TOKEN` | `github_token` |
 | `DPAD_DATA_DIR` | where `data/` lives |
 | `DPAD_CACERT` | the CA bundle path |

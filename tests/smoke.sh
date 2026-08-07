@@ -123,6 +123,25 @@ else
     fail "all output wraps to $COLS columns" "longest line was $longest"
 fi
 
+# The settings file is the only route a suggestion has into the app, so a key
+# missing from the whitelist would reach the user as a warning about their own
+# config and no suggestion at all.
+mkdir -p "$WORK_DIR/data"
+printf 'suggest = I am playing something\n' >"$WORK_DIR/data/settings.cfg"
+
+out=$(printf '/quit\n' | run_app)
+assert_not_contains 'suggest is a known setting' "$out" "unknown setting 'suggest'"
+
+# Piped input takes the fallback read, where there is no terminal to draw a
+# suggestion on and no key to accept it with. What matters is not that it is
+# invisible but that it cannot be sent: nothing is ever asked that the user did
+# not type or accept.
+out=$(printf 'hello\n/quit\n' | run_app)
+assert_not_contains 'and a suggestion never reaches a piped line' \
+    "$out" 'I am playing something'
+
+rm -f "$WORK_DIR/data/settings.cfg"
+
 # A session log is the only diagnostic available once the app is on a device.
 if [ -f "$WORK_DIR/data/dpad-chat.log" ]; then
     pass 'a session log is written'

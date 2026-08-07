@@ -204,6 +204,45 @@ keys() {
     KEYS_COLS=$(sed -n 's/^cols=//p' "$DRIVER_OUT")
 }
 
+# Recall cannot be exercised in a single read: there has to be something to
+# recall. This driver reads lines until end of input, remembering each the way
+# the REPL does, and reports every line it read.
+SESSION="$WORK_DIR/session.sh"
+cat >"$SESSION" <<'SESSION_EOF'
+#!/bin/sh
+set -eu
+# shellcheck source=/dev/null
+. "$REPO_ROOT/app/lib/input.sh"
+
+if [ -n "${DRIVER_COLS:-}" ]; then
+    COLUMNS="$DRIVER_COLS"
+    export COLUMNS
+else
+    unset COLUMNS
+fi
+
+input_init
+: >"$DRIVER_OUT"
+
+while input_readline "${DRIVER_PROMPT_COLS:-0}"; do
+    printf 'line=%s\n' "$INPUT_LINE" >>"$DRIVER_OUT"
+    input_remember "$INPUT_LINE"
+done
+SESSION_EOF
+chmod +x "$SESSION"
+
+# Types keystrokes at that driver and prints every line it read, one per line.
+# End the input with \004 - Ctrl-D on an empty line - or the driver waits for
+# the capture to time out instead of finishing.
+session() {
+    : >"$DRIVER_OUT"
+    DRIVER_COLS="${2:-80}"
+    export DRIVER_COLS
+    "$REPO_ROOT/tests/keys.py" --cols "${2:-80}" --input "$1" \
+        -- "$SESSION" >/dev/null 2>&1 || :
+    sed -n 's/^line=//p' "$DRIVER_OUT"
+}
+
 if ! command -v python3 >/dev/null 2>&1; then
     printf '  skipped: python3 not installed\n'
 elif ! keys 'probe\r' || [ "$KEYS_LINE" != 'probe' ]; then
@@ -212,30 +251,31 @@ else
     assert_eq 'a typed line is read' "$KEYS_LINE" 'probe'
     assert_eq 'the terminal was taken raw' "$KEYS_RAW" '1'
     assert_eq 'the terminal is handed back' "$KEYS_TTY" 'restored'
-    assert_eq 'the editor draws what was typed' "$KEYS_ECHO" "$(printf 'probe\r\n')"
 
-    # Issue #19. Home is `ESC [ H`, and in canonical mode all four bytes were
-    # echoed and appended. It must now leave no trace at all.
-    keys 'ab\033[Hcd\r'
-    assert_eq 'Home does not reach the message' "$KEYS_LINE" 'abcd'
-    assert_not_contains 'Home draws nothing' "$KEYS_ECHO" "$ESC"
-    assert_not_contains 'no stray bracket from Home' "$KEYS_ECHO" '['
+    # Every edit redraws the line and then puts the cursor back where the
+    # buffer says it is, so what a keystroke draws is the line so far bracketed
+    # by two absolute column moves. Spelled out once, here, rather than at every
+    # case below: the rest assert on the line, which is what the user sees.
+    keys 'ab\r'
+    assert_eq 'the editor draws what was typed' "$KEYS_ECHO" \
+        "$(printf '\033[1Ga\033[2G\033[1Gab\033[3G\r\n')"
 
-    # The other form of the same key, sent depending on terminal mode.
-    keys 'ab\033[1~cd\r'
-    assert_eq 'the other Home encoding is dropped too' "$KEYS_LINE" 'abcd'
-    assert_not_contains 'and it draws nothing either' "$KEYS_ECHO" '~'
+    # Issue #19 stopped Home typing its bytes. #22 gives it a real binding, so
+    # it now moves the cursor to the start and typing goes in front.
+    keys 'ab\033[HX\r'
+    assert_eq 'Home moves to the start of the line' "$KEYS_LINE" 'Xab'
+    assert_not_contains 'and none of its bytes are typed' "$KEYS_ECHO" '~'
 
-    # Not bound until #22, but they must already be consumed whole rather than
-    # typed.
-    keys 'ab\033[A\033[B\033[C\033[D\r'
-    assert_eq 'arrow keys are consumed, not typed' "$KEYS_LINE" 'ab'
-    assert_not_contains 'arrow keys draw nothing' "$KEYS_ECHO" "$ESC"
+    # The forms of Home and End differ by terminal mode, not by key.
+    for _home in '\033[H' '\033OH' '\033[1~' '\033[7~'; do
+        keys "ab${_home}X\r"
+        assert_eq "Home as ${_home} reaches the start" "$KEYS_LINE" 'Xab'
+    done
 
-    # Cursor keys arrive as SS3 rather than CSI when the terminal is in
-    # application mode, which is a property of the mode and not of the key.
-    keys 'ab\033OAcd\r'
-    assert_eq 'the SS3 form is consumed too' "$KEYS_LINE" 'abcd'
+    for _end in '\033[F' '\033OF' '\033[4~' '\033[8~'; do
+        keys "ab\033[H${_end}Z\r"
+        assert_eq "End as ${_end} reaches the end" "$KEYS_LINE" 'abZ'
+    done
 
     # A parameterised sequence: the digits and the separator are parameters,
     # and the letter ends it. Stopping at the wrong byte would leave the rest
@@ -249,11 +289,10 @@ else
     keys 'abc\177\r'
     assert_eq 'backspace removes the last character' "$KEYS_LINE" 'ab'
 
-    # Column 3 holds the `c`: the cursor goes there, writes a space over it and
-    # comes back. Naming the column rather than backspacing is what lets the
-    # same code step onto the row above.
-    assert_contains 'backspace writes over the character' \
-        "$KEYS_ECHO" "$(printf '\033[3G \033[3G')"
+    # The redraw prints what is left and then a space to cover the character
+    # that went, so the shortened line and the cover are one write.
+    assert_contains 'backspace covers the character that went' \
+        "$KEYS_ECHO" "$(printf '\033[1Gab \033[3G')"
     assert_not_contains 'and nothing moves rows on a line that never wrapped' \
         "$KEYS_ECHO" "$(printf '\033[1A')"
 
@@ -302,9 +341,117 @@ else
     assert_not_contains 'and still types nothing' "$KEYS_ECHO" '~'
 
     # The neighbouring sequences differ from Del by one byte. Binding on a
-    # prefix rather than the whole sequence would fire on these.
-    keys 'abc\033[2~\033[4~\033[5~\033[6~\r'
+    # prefix rather than the whole sequence would fire on these. `[4~` is End
+    # and does move the cursor, so it is checked separately above.
+    keys 'abc\033[2~\033[5~\033[6~\r'
     assert_eq 'the keys either side of Del do not delete' "$KEYS_LINE" 'abc'
+
+    # -------------------------------------------------------------------------
+    # Issue #22: moving the cursor
+    # -------------------------------------------------------------------------
+
+    printf '\nMoving the cursor\n'
+
+    keys 'ab\033[Dc\r'
+    assert_eq 'Left moves back, and typing inserts there' "$KEYS_LINE" 'acb'
+
+    keys 'abc\033[D\033[D\033[CX\r'
+    assert_eq 'Right moves forward again' "$KEYS_LINE" 'abXc'
+
+    # Both encodings, which depend on terminal mode rather than on the key.
+    keys 'ab\033ODc\r'
+    assert_eq 'the SS3 form of Left moves too' "$KEYS_LINE" 'acb'
+
+    keys 'abc\033[D\033OCX\r'
+    assert_eq 'and the SS3 form of Right' "$KEYS_LINE" 'abcX'
+
+    # Clamped at both ends by having nothing left to move.
+    keys 'ab\033[D\033[D\033[D\033[DX\r'
+    assert_eq 'Left stops at the start of the line' "$KEYS_LINE" 'Xab'
+
+    keys 'ab\033[C\033[CX\r'
+    assert_eq 'Right stops at the end' "$KEYS_LINE" 'abX'
+
+    # Erase and delete are relative to the cursor, so where it sits decides
+    # which character goes.
+    keys 'abc\033[D\177\r'
+    assert_eq 'backspace takes the character behind the cursor' "$KEYS_LINE" 'ac'
+
+    keys 'abc\033[D\033[3~\r'
+    assert_eq 'and Del takes the one under it' "$KEYS_LINE" 'ab'
+
+    keys 'abc\033[H\033[3~\r'
+    assert_eq 'Del at the start of the line deletes forward' "$KEYS_LINE" 'bc'
+
+    keys 'abc\033[H\177\r'
+    assert_eq 'backspace at the start has nothing to take' "$KEYS_LINE" 'abc'
+
+    # Submitting with the cursor part-way along must send the whole line, and
+    # must put the newline after the end of it - not where the cursor is, which
+    # would leave the tail on screen for the reply to be printed over.
+    keys 'abc\033[D\033[D\r'
+    assert_eq 'the whole line is submitted from mid-line' "$KEYS_LINE" 'abc'
+    assert_contains 'and the cursor goes to the end before the newline' \
+        "$KEYS_ECHO" "$(printf '\033[4G\r\n')"
+
+    # The cursor has to cross wrapped rows the same way erasing does.
+    keys 'abcdefghijk\033[D\033[D\033[DX\r' 10
+    assert_eq 'Left crosses a wrap' "$KEYS_LINE" 'abcdefghXijk'
+    assert_contains 'stepping up a row to do it' "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    keys 'abcdefghijkl\033[HX\r' 10
+    assert_eq 'Home crosses back over two rows' "$KEYS_LINE" 'Xabcdefghijkl'
+
+    keys 'abcdefghijkl\033[H\033[FZ\r' 10
+    assert_eq 'and End returns across them' "$KEYS_LINE" 'abcdefghijklZ'
+
+    # -------------------------------------------------------------------------
+    # Issue #22: recalling what was sent
+    # -------------------------------------------------------------------------
+
+    printf '\nRecalling\n'
+
+    assert_eq 'Up recalls the line before' \
+        "$(session 'one\rtwo\r\033[A\r\004')" "$(printf 'one\ntwo\ntwo')"
+
+    assert_eq 'Up twice reaches the one before that' \
+        "$(session 'one\rtwo\r\033[A\033[A\r\004')" "$(printf 'one\ntwo\none')"
+
+    assert_eq 'Up stops at the oldest line' \
+        "$(session 'one\r\033[A\033[A\033[A\r\004')" "$(printf 'one\none')"
+
+    # The line being typed is kept when the walk starts, so Down comes back to
+    # it rather than to an empty prompt.
+    assert_eq 'Down returns to what was being typed' \
+        "$(session 'one\rliv\033[A\033[B\r\004')" "$(printf 'one\nliv')"
+
+    assert_eq 'Down on the live line does nothing' \
+        "$(session 'one\rx\033[B\r\004')" "$(printf 'one\nx')"
+
+    # What is recalled is a starting point, not a fixed choice: the cursor
+    # lands at the end of it so it can be added to.
+    assert_eq 'a recalled line can be edited' \
+        "$(session 'one\r\033[AX\r\004')" "$(printf 'one\noneX')"
+
+    assert_eq 'and the cursor is at the end of it' \
+        "$(session 'abc\r\033[A\033[HX\r\004')" "$(printf 'abc\nXabc')"
+
+    # Sending the same line twice would otherwise cost two presses of Up to
+    # get past.
+    assert_eq 'the same line twice is remembered once' \
+        "$(session 'a\rb\rb\r\033[A\033[A\r\004')" "$(printf 'a\nb\nb\na')"
+
+    # A walk belongs to the line it was started from. If the position carried
+    # over, this Down would restore the previous line's saved live text - which
+    # was empty - instead of leaving Z alone.
+    assert_eq 'the walk starts again on the next line' \
+        "$(session 'a\rb\r\033[A\rZ\033[B\r\004')" "$(printf 'a\nb\nb\nZ')"
+
+    # Commands are recallable too: retyping /update on a d-pad is exactly what
+    # this is for. The REPL is what calls input_remember, so this checks the
+    # editor keeps whatever it is given rather than filtering it.
+    assert_eq 'a command is recallable like anything else' \
+        "$(session '/update\r\033[A\r\004')" "$(printf '/update\n/update')"
 
     # Ctrl-D keeps the meaning the line discipline gave it, so quitting over
     # SSH still works.
@@ -319,7 +466,7 @@ else
     # the display if it were echoed.
     keys 'a\007b\r'
     assert_eq 'unbound control bytes are ignored' "$KEYS_LINE" 'ab'
-    assert_eq 'and are not drawn' "$KEYS_ECHO" "$(printf 'ab\r\n')"
+    assert_not_contains 'and are not drawn' "$KEYS_ECHO" "$(printf '\007')"
 
     keys 'a\tb\r'
     assert_eq 'tab is not typed into the line' "$KEYS_LINE" 'ab'
@@ -371,19 +518,17 @@ else
     assert_eq 'the character at the boundary is removed' "$KEYS_LINE" 'abcdefghi'
     assert_contains 'and erasing steps up to the row above' \
         "$KEYS_ECHO" "$(printf '\033[1A')"
-    assert_contains 'onto the last column of it' \
-        "$KEYS_ECHO" "$(printf '\033[10G \033[10G')"
-
-    # The whole exchange, byte for byte, because the assertions above each
-    # cover one part of it and would all still pass if the parts arrived in the
-    # wrong order. Reading left to right: the ten characters; the wrap forced
-    # once the row is full; up one row, over to the last column, a space over
-    # the character, back to the column; then the newline that submits.
+    # The erase byte for byte, because the assertions above each cover one part
+    # of it and would all still pass if the parts arrived in the wrong order.
+    # Reading left to right: up onto the row the line starts on and over to its
+    # first column; the nine characters that are left, then a space covering
+    # the tenth; the wrap forced again because those ten still fill the row;
+    # and back up to the column the cursor now belongs in.
     #
     # The doubled carriage returns are the terminal's own doing - ONLCR turns
     # every newline written into one - and are what the capture really holds.
-    assert_eq 'the erase is drawn exactly this way' "$KEYS_ECHO" \
-        "$(printf 'abcdefghij\r\r\n\033[1A\033[10G \033[10G\r\n')"
+    assert_contains 'the erase is drawn in this order' "$KEYS_ECHO" \
+        "$(printf '\033[1A\033[1Gabcdefghi \r\r\n\033[1A\033[10G')"
 
     # One short of the boundary: same line, no wrap involved, so nothing should
     # move rows. This is what proves the step up is driven by the arithmetic
@@ -430,8 +575,10 @@ else
     keys 'abc\177\r' 0
     assert_eq 'too narrow to wrap is reported as zero' "$KEYS_COLS" '0'
     assert_eq 'and the line is still edited' "$KEYS_LINE" 'ab'
-    assert_contains 'by rubbing the character out in place' \
-        "$KEYS_ECHO" "$(printf '\b \b')"
+    # Backspaces only. Without a width there is no way to know which row any
+    # column is on, so the cursor is never moved by an escape that names one.
+    assert_contains 'using backspaces to get about' "$KEYS_ECHO" "$(printf '\b')"
+    assert_not_contains 'and never naming a row or column' "$KEYS_ECHO" "$ESC"
 fi
 
 # -----------------------------------------------------------------------------

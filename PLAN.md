@@ -320,15 +320,40 @@ point: a key with no meaning must leave no trace rather than typing its bytes.
 | --- | --- | --- |
 | Enter | `CR`, `LF` | submits the line |
 | Backspace | `0x7F`, `0x08` | erases the character behind the cursor |
-| Del | `ESC [ 3 ~` | erases as well — see below |
+| Del | `ESC [ 3 ~` | deletes the character under it, or behind it at the end |
+| Left / Right | `ESC [ D` / `C`, `ESC O D` / `C` | moves the cursor within the line |
+| Up / Down | `ESC [ A` / `B`, `ESC O A` / `B` | walks the recall list |
+| Home | `ESC [ H`, `ESC O H`, `ESC [ 1 ~`, `ESC [ 7 ~` | start of the line |
+| End | `ESC [ F`, `ESC O F`, `ESC [ 4 ~`, `ESC [ 8 ~` | end of the line |
 | Ctrl-D | `0x04` | ends input, but only on an empty line |
 
-Which byte Backspace sends is a property of how the terminal was built, not of the key,
-so both are bound; guessing wrong leaves the key dead. Del means *forward* delete where a
-cursor can sit mid-line, but the cursor cannot yet be anywhere but the end of the line,
-so there is never a character in front of it — erasing the one behind is what makes the
-key useful in the position it is actually pressed in. The forward case arrives with the
-cursor movement that makes it reachable.
+Several keys have more than one encoding, and which one arrives depends on the terminal's
+mode rather than on the key — the cursor keys switch between CSI and SS3 with application
+cursor key mode. Binding one form would leave the key dead in the other. Backspace is the
+same problem in miniature: which byte it sends is a property of how the terminal was
+built, so both are bound.
+
+Del means *forward* delete where a cursor can sit mid-line. At the end of the line there
+is nothing in front of it, and that is where the key is most often pressed, so it erases
+behind instead of doing nothing.
+
+**The line is held as two halves split at the cursor** — what is before it and what is at
+and after it. Every edit is then a parameter expansion on one end of one half, and the
+cursor's offset is the length of the first. The obvious alternative, one string and an
+integer offset, needs a substring of it on every keystroke, and the shell has no cheap way
+to take one.
+
+**Every edit redraws the whole line.** Working out the smallest update per operation was
+reasonable while the cursor could only be at the end; it is not once inserting mid-line
+shifts the whole tail right and deleting shifts it left, because nearly every edit then
+touches the rest of the line anyway. One path that is always right beats several that are
+each nearly so. The cost is one `printf` against the fork this file already does for
+every byte it reads, at the speed anyone can type on a d-pad.
+
+**Recall is an editing convenience, held in memory for the session and never written
+down.** `data/history.json` is the model's context; what was typed at the prompt is a
+different question from what the conversation contains. Commands are remembered along
+with questions, because retyping `/update` on a d-pad is exactly what this is for.
 
 Notes that are easy to get wrong:
 

@@ -67,6 +67,8 @@ input_init() {
     INPUT_TTY=0
     INPUT_COLS=$(_input_detect_cols)
     INPUT_START_COL=0
+    _input_reset_line
+    _input_recall_init
 
     # stdin carries the keystrokes and stdout is where the line is drawn, so
     # both have to be a terminal. dd and stty are busybox builtins on the
@@ -217,77 +219,284 @@ _input_escape() {
 # Editing
 # -----------------------------------------------------------------------------
 
-# Where the cursor is, in the terminal's own terms, is the whole difficulty
-# here. The line starts at column INPUT_START_COL of some row, and from there
-# the character at offset n of the buffer sits at absolute column
-# INPUT_START_COL + n, which is row (that / INPUT_COLS), column (that %
-# INPUT_COLS). That arithmetic is only trustworthy because of the wrap forced
-# in _input_insert; see the note there.
+# The line is held as two halves split at the cursor: INPUT_HEAD is what is
+# before it, INPUT_TAIL what is at and after it. Every edit is then a parameter
+# expansion on one end of one half, and the cursor's offset is ${#INPUT_HEAD}.
 #
-# It holds for as long as every row of the line is still on screen. A line long
-# enough to fill the scrolling region pushes its own first rows off the top,
-# and erasing back into one of those would write where it used to be. That
-# needs a full repaint to fix rather than better arithmetic, and it takes
-# roughly 1400 characters to reach on the device, so it is left alone.
-_input_insert() {
-    INPUT_LINE="$INPUT_LINE$1"
-    printf '%s' "$1"
+# The obvious alternative - one string and an integer offset - needs a
+# substring of it on every keystroke, and the shell has no cheap way to take
+# one. Splitting the string is where the cursor already is.
+_input_reset_line() {
+    INPUT_HEAD=''
+    INPUT_TAIL=''
 
-    [ "$INPUT_COLS" -ge "$INPUT_MIN_COLS" ] || return 0
-
-    # Filling the last column of a row does not move the cursor to the next
-    # row. The terminal leaves it on the last column with the wrap pending and
-    # acts on it only when the next character arrives, so at this moment the
-    # cursor's row is genuinely ambiguous: it is one row above where the
-    # arithmetic above says it is, until something else is printed.
-    #
-    # Forcing the wrap now settles it. The row the cursor moves to is the row
-    # it was going to move to anyway on the next keystroke, so nothing is
-    # displaced - and every relative move made afterwards starts from a
-    # position that matches the arithmetic instead of being off by one.
-    if [ $(((INPUT_START_COL + ${#INPUT_LINE}) % INPUT_COLS)) -eq 0 ]; then
-        printf '\r\n'
-    fi
-
-    return 0
+    # Where the cursor was left and how long the line was when it was last
+    # drawn. The redraw needs both: one to find its way back to the start of
+    # the line, the other to know how much of what is on screen is stale.
+    _INPUT_DRAWN_POS=0
+    _INPUT_DRAWN_LEN=0
 }
 
-# Removes the character before the cursor from the buffer and from the screen.
+# Where the cursor is, in the terminal's own terms, is the whole difficulty
+# here. The line starts at column INPUT_START_COL of some row, and from there
+# offset n sits at absolute column INPUT_START_COL + n, which is row (that /
+# INPUT_COLS), column (that % INPUT_COLS).
 #
-# The line discipline used to do this with `\b \b`, which only ever works
-# inside one row: at column 0 a backspace has nowhere to go, so the character
-# at the end of the row above stayed on screen even though it had already been
-# dropped from the message being sent. Moving up explicitly is what makes
-# erasing continue across the boundary.
-_input_erase() {
-    [ -n "$INPUT_LINE" ] || return 0
+# That holds for as long as every row of the line is still on screen. A line
+# long enough to fill the scrolling region pushes its own first rows off the
+# top, and editing back into one of those would write where it used to be. It
+# takes roughly 1400 characters to reach on the device, so it is left alone.
 
-    _in_len=${#INPUT_LINE}
-    INPUT_LINE=${INPUT_LINE%?}
-
+# Moves the cursor from offset $1 of the line to offset $2, which is never to
+# the right of it: the redraw walks back to the start, and then back from the
+# end of what it printed to where the cursor belongs.
+_input_move_back() {
     if [ "$INPUT_COLS" -lt "$INPUT_MIN_COLS" ]; then
-        # No width, so a wrap cannot be located. Rubbing the character out in
-        # place is right on a single row and stuck at the boundary, which is
-        # the old behaviour: a prompt that edits within one row beats one that
-        # moves the cursor somewhere the terminal was not.
-        printf '\b \b'
+        # No width means no rows to speak of, so the line is treated as the one
+        # row it is until it wraps. Backspace is the only move available.
+        _mv_n=$(($1 - $2))
+        while [ "$_mv_n" -gt 0 ]; do
+            printf '\b'
+            _mv_n=$((_mv_n - 1))
+        done
         return 0
     fi
 
-    # Absolute column of the character being removed. The cursor is one column
-    # further on, so the two can fall on different rows - which is exactly the
-    # case that was broken.
-    _in_at=$((INPUT_START_COL + _in_len - 1))
-    _in_up=$(((_in_at + 1) / INPUT_COLS - _in_at / INPUT_COLS))
-    _in_col=$((_in_at % INPUT_COLS + 1))
+    _mv_from=$((INPUT_START_COL + $1))
+    _mv_to=$((INPUT_START_COL + $2))
+    _mv_up=$((_mv_from / INPUT_COLS - _mv_to / INPUT_COLS))
 
-    [ "$_in_up" -eq 0 ] || printf '\033[%dA' "$_in_up"
+    [ "$_mv_up" -eq 0 ] || printf '\033[%dA' "$_mv_up"
 
-    # Absolute column rather than backspaces: CHA lands on the column named
-    # regardless of where the cursor started, and it clears any pending wrap
-    # left over from the row above.
-    printf '\033[%dG \033[%dG' "$_in_col" "$_in_col"
+    # Absolute column rather than a count of backspaces: CHA lands on the
+    # column named regardless of where the cursor started, and it clears any
+    # pending wrap left over from the row above.
+    printf '\033[%dG' $((_mv_to % INPUT_COLS + 1))
     return 0
+}
+
+# Redraws the whole line and leaves the cursor where the buffer says it is.
+#
+# Working out the smallest update for each operation was reasonable while the
+# cursor could only be at the end. It is not now: inserting mid-line shifts the
+# whole tail right and deleting shifts it left, so nearly every edit touches
+# the rest of the line anyway. One path that is always right beats several that
+# are each nearly so, and the cost is one printf - against the fork this file
+# already does for every byte it reads, which is far more expensive.
+_input_redraw() {
+    _rd_all="$INPUT_HEAD$INPUT_TAIL"
+    _rd_len=${#_rd_all}
+    _rd_cur=${#INPUT_HEAD}
+
+    # Whatever the line used to be longer by is still on screen behind it.
+    # Spaces cover it, which is cheaper than erasing to the end of each row the
+    # line occupies - and erasing to end of display would take the status bar
+    # with it.
+    _rd_pad=0
+    if [ "$_INPUT_DRAWN_LEN" -gt "$_rd_len" ]; then
+        _rd_pad=$((_INPUT_DRAWN_LEN - _rd_len))
+    fi
+
+    _input_move_back "$_INPUT_DRAWN_POS" 0
+
+    printf '%s' "$_rd_all"
+    _rd_i=0
+    while [ "$_rd_i" -lt "$_rd_pad" ]; do
+        printf ' '
+        _rd_i=$((_rd_i + 1))
+    done
+
+    _rd_printed=$((_rd_len + _rd_pad))
+
+    # Filling the last column of a row does not move the cursor to the next
+    # row. The terminal leaves it there with the wrap pending and acts on it
+    # only when the next character arrives, so at this moment the cursor's row
+    # is genuinely ambiguous - it is one row above where the arithmetic says it
+    # is. Forcing the wrap settles it, and moves the cursor to the row it was
+    # going to move to anyway, so nothing is displaced.
+    if [ "$INPUT_COLS" -ge "$INPUT_MIN_COLS" ] && [ "$_rd_printed" -gt 0 ] &&
+        [ $(((INPUT_START_COL + _rd_printed) % INPUT_COLS)) -eq 0 ]; then
+        printf '\r\n'
+    fi
+
+    _input_move_back "$_rd_printed" "$_rd_cur"
+
+    _INPUT_DRAWN_POS="$_rd_cur"
+    _INPUT_DRAWN_LEN="$_rd_len"
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# Editing, all relative to the cursor
+# -----------------------------------------------------------------------------
+
+_input_insert() {
+    INPUT_HEAD="$INPUT_HEAD$1"
+    _input_redraw
+}
+
+# Backspace: the character behind the cursor.
+_input_erase() {
+    [ -n "$INPUT_HEAD" ] || return 0
+    INPUT_HEAD=${INPUT_HEAD%?}
+    _input_redraw
+}
+
+# Del. Forward delete - the character the cursor is on, with the rest of the
+# line pulled left - is what the key means where a cursor can sit mid-line.
+# At the end of the line there is nothing in front of it, and that is where the
+# key is most often pressed, so it erases behind instead of doing nothing.
+_input_delete() {
+    if [ -z "$INPUT_TAIL" ]; then
+        _input_erase
+        return 0
+    fi
+
+    INPUT_TAIL=${INPUT_TAIL#?}
+    _input_redraw
+}
+
+# Both ends are clamped by having nothing to move: the halves are only ever
+# rebalanced when the side being taken from is non-empty.
+_input_left() {
+    [ -n "$INPUT_HEAD" ] || return 0
+
+    # The last character of HEAD, by removing everything that is not it.
+    _lf_c=${INPUT_HEAD#"${INPUT_HEAD%?}"}
+    INPUT_HEAD=${INPUT_HEAD%?}
+    INPUT_TAIL="$_lf_c$INPUT_TAIL"
+    _input_redraw
+}
+
+_input_right() {
+    [ -n "$INPUT_TAIL" ] || return 0
+
+    _rt_c=${INPUT_TAIL%"${INPUT_TAIL#?}"}
+    INPUT_TAIL=${INPUT_TAIL#?}
+    INPUT_HEAD="$INPUT_HEAD$_rt_c"
+    _input_redraw
+}
+
+_input_home() {
+    [ -n "$INPUT_HEAD" ] || return 0
+    INPUT_TAIL="$INPUT_HEAD$INPUT_TAIL"
+    INPUT_HEAD=''
+    _input_redraw
+}
+
+# Guarded like the rest so that submitting a line the cursor is already at the
+# end of - which is most of them - draws nothing at all.
+_input_end() {
+    [ -n "$INPUT_TAIL" ] || return 0
+    INPUT_HEAD="$INPUT_HEAD$INPUT_TAIL"
+    INPUT_TAIL=''
+    _input_redraw
+}
+
+# -----------------------------------------------------------------------------
+# Recalling what was sent
+# -----------------------------------------------------------------------------
+
+# Every character costs several d-pad presses, so resending or amending an
+# earlier line is worth far more here than it is on a desk keyboard.
+#
+# This is an editing convenience and nothing else. It is held in memory for the
+# session and never written down: data/history.json is the model's context, and
+# what was typed at the prompt is not the same question as what the
+# conversation contains.
+#
+# The list is newline-separated with the most recent first, which is the order
+# Up walks. Lines cannot themselves contain a newline - the editor submits on
+# one - so nothing needs escaping.
+INPUT_RECALL_MAX=50
+
+_input_recall_init() {
+    INPUT_RECALL=''
+    INPUT_RECALL_N=0
+
+    # 0 is the line being typed now, which is not in the list. 1 is the most
+    # recent entry, and so on.
+    INPUT_RECALL_AT=0
+
+    # What was being typed when the walk started, so Down can come back to it.
+    INPUT_RECALL_LIVE=''
+}
+
+# Records a line as recallable. Called by the REPL for what it accepts, so
+# commands are remembered along with questions - retyping /update on a d-pad is
+# exactly the kind of thing this is for.
+input_remember() {
+    [ -n "${1:-}" ] || return 0
+
+    # Repeating the same line twice running would otherwise need two presses of
+    # Up to get past.
+    [ "$1" != "${INPUT_RECALL%%"$INPUT_LF"*}" ] || return 0
+
+    INPUT_RECALL="$1$INPUT_LF$INPUT_RECALL"
+    INPUT_RECALL_N=$((INPUT_RECALL_N + 1))
+
+    [ "$INPUT_RECALL_N" -gt "$INPUT_RECALL_MAX" ] || return 0
+
+    # Drop the oldest by keeping only the first MAX entries. A session long
+    # enough to reach this is not one where the fiftieth-oldest line is wanted.
+    _rm_keep=''
+    _rm_rest="$INPUT_RECALL"
+    _rm_i=0
+    while [ "$_rm_i" -lt "$INPUT_RECALL_MAX" ]; do
+        _rm_keep="$_rm_keep${_rm_rest%%"$INPUT_LF"*}$INPUT_LF"
+        _rm_rest=${_rm_rest#*"$INPUT_LF"}
+        _rm_i=$((_rm_i + 1))
+    done
+
+    INPUT_RECALL="$_rm_keep"
+    INPUT_RECALL_N="$INPUT_RECALL_MAX"
+    return 0
+}
+
+# The $1'th entry, counting the most recent as 1.
+_input_recall_entry() {
+    _re_rest="$INPUT_RECALL"
+    _re_i=1
+
+    while [ "$_re_i" -lt "$1" ]; do
+        _re_rest=${_re_rest#*"$INPUT_LF"}
+        _re_i=$((_re_i + 1))
+    done
+
+    printf '%s' "${_re_rest%%"$INPUT_LF"*}"
+}
+
+# Replaces the line with $1 and puts the cursor at the end of it, which is
+# where it is wanted for amending what was recalled.
+_input_recall_show() {
+    INPUT_HEAD="$1"
+    INPUT_TAIL=''
+    _input_redraw
+}
+
+_input_recall_up() {
+    [ "$INPUT_RECALL_AT" -lt "$INPUT_RECALL_N" ] || return 0
+
+    # Leaving the live line for the first time, so keep it to come back to.
+    if [ "$INPUT_RECALL_AT" -eq 0 ]; then
+        INPUT_RECALL_LIVE="$INPUT_HEAD$INPUT_TAIL"
+    fi
+
+    INPUT_RECALL_AT=$((INPUT_RECALL_AT + 1))
+    _input_recall_show "$(_input_recall_entry "$INPUT_RECALL_AT")"
+}
+
+_input_recall_down() {
+    [ "$INPUT_RECALL_AT" -gt 0 ] || return 0
+
+    INPUT_RECALL_AT=$((INPUT_RECALL_AT - 1))
+
+    if [ "$INPUT_RECALL_AT" -eq 0 ]; then
+        _input_recall_show "$INPUT_RECALL_LIVE"
+        return 0
+    fi
+
+    _input_recall_show "$(_input_recall_entry "$INPUT_RECALL_AT")"
 }
 
 # -----------------------------------------------------------------------------
@@ -323,6 +532,13 @@ input_readline() {
         return 0
     fi
 
+    _input_reset_line
+
+    # A walk through the recall list belongs to the line it was started from,
+    # not to the session.
+    INPUT_RECALL_AT=0
+    INPUT_RECALL_LIVE=''
+
     _in_eof=0
 
     while :; do
@@ -333,23 +549,32 @@ input_readline() {
 
         case "$_in_b" in
             "$INPUT_CR" | "$INPUT_LF")
+                # The cursor can be anywhere in the line now, and the newline
+                # goes wherever it is. Moving to the end first is what keeps
+                # the reply from being printed over the tail of the question.
+                _input_end
                 printf '\n'
                 break
                 ;;
             "$INPUT_ESC")
                 _input_escape
+
+                # Both encodings of every cursor key. Which one arrives depends
+                # on whether the terminal is in application cursor key mode,
+                # which is a property of the mode and not of the key, so
+                # binding one form would leave the key dead in the other.
                 case "$INPUT_KEY" in
-                    # Del. On a keyboard that also has a backspace this means
-                    # forward delete: drop the character the cursor is on and
-                    # pull the rest of the line left. The cursor cannot yet be
-                    # anywhere but the end of the line, so there is never a
-                    # character in front of it to remove, and the useful thing
-                    # to do in the position the key is actually pressed in is
-                    # to erase the one behind.
-                    #
-                    # #22 gives the cursor somewhere else to be, and the
-                    # forward case belongs with it.
-                    '[3~') _input_erase ;;
+                    '[D' | 'OD') _input_left ;;
+                    '[C' | 'OC') _input_right ;;
+                    '[A' | 'OA') _input_recall_up ;;
+                    '[B' | 'OB') _input_recall_down ;;
+
+                    # Home and End. #19 made Home a no-op deliberately, because
+                    # there was nowhere else for the cursor to be; now there is.
+                    '[H' | 'OH' | '[1~' | '[7~') _input_home ;;
+                    '[F' | 'OF' | '[4~' | '[8~') _input_end ;;
+
+                    '[3~') _input_delete ;;
 
                     # Every other sequence is a key with no binding. Consumed
                     # by the parse above, which is what stops it being typed.
@@ -362,7 +587,7 @@ input_readline() {
             "$INPUT_EOT")
                 # End of input, but only on an empty line: the same rule the
                 # line discipline applied, so Ctrl-D over SSH still quits.
-                if [ -z "$INPUT_LINE" ]; then
+                if [ -z "$INPUT_HEAD$INPUT_TAIL" ]; then
                     _in_eof=1
                     break
                 fi
@@ -378,6 +603,8 @@ input_readline() {
     done
 
     input_restore
+
+    INPUT_LINE="$INPUT_HEAD$INPUT_TAIL"
 
     [ "$_in_eof" -eq 0 ] || return 1
     return 0

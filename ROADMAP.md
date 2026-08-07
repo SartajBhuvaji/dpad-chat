@@ -54,19 +54,40 @@ what makes the idea good needs none of it.
 
 ---
 
-## 2a. Installing must not get harder
+## 2a. What none of this may require
 
-Today the whole install is: copy a folder onto the card, open it from Apps, set a key.
-Nothing is registered, nothing runs at boot, nothing is patched. Uninstalling is deleting
-the folder. That property is worth more than any single feature here.
+Anything that needs the user to modify Onion, enable something, or know what SSH is has
+lost most of the people who would otherwise use it. A handheld is not a workstation, and
+somebody who has just copied a folder onto a card should not then be asked to earn the
+feature. This is a constraint on the design, not a preference about it.
 
-Stages A, B and D leave it untouched. A and B are code inside the app. D is a
-cross-compiled binary, which for the user is still just a file in the folder being copied
-— the toolchain cost is ours at build time, not theirs at install time, and the release
-stays a zip of `App/DPadChat/`.
+Three rules, and every stage is scored against them:
 
-**Stage C is the only one that could break it**, because a hotkey must be watched while
-the app is not running. `/background` in §5 is how it does not.
+**1. Installing stays "copy a folder."** Nothing registered, nothing at boot, nothing
+patched. Uninstalling stays "delete the folder."
+
+**2. Onion is read-only.** We may read what it leaves lying about. We never write to it,
+never patch it, and never require a particular version of it. If a future Onion moves or
+renames something we read, we lose a suggestion — not a working app.
+
+**3. Nothing we do may cost the user their game.** This is the one that actually separates
+the stages, and it took the constraint being written down to see it.
+
+| | Installs cleanly | Only reads Onion | Cannot harm a game |
+| --- | --- | --- | --- |
+| **A** — prefill | yes | touches nothing | yes |
+| **B** — game-aware | yes | two file reads | yes |
+| **C** — chord | via `/background` | yes | **no** — signals a live emulator |
+| **D** — overlay | binary in our folder | yes | **no** — writes the framebuffer |
+
+**A and B have no blast radius at all.** The worst failure either can produce is a wrong
+suggestion or no suggestion, and §4 makes that failure silent by design.
+
+**C and D reach into a running game** — stopping its process, or drawing over the screen it
+owns. If either goes wrong, what is lost is somebody's unsaved progress, which is a far
+worse thing to be wrong about than a prompt. That does not rule them out, but it does mean
+they need a much higher bar than "it worked when I tried it", and it is a second
+independent reason they sit behind B rather than in front of it.
 
 ---
 
@@ -139,6 +160,13 @@ If the game cannot be identified, the app behaves exactly as it does today. A wr
 name in the prompt is worse than none: it would be quietly fed to the model as fact, and
 the user would have to notice and correct it. Silence is the safe failure here.
 
+That is also what makes rule 2 in §2a survivable. Both files are Onion's own working
+state, not a published interface, so a future version may move, rename or restructure
+either without warning. Because a missing or unreadable file means no suggestion rather
+than an error, an Onion update can at worst quietly take the feature away — and the app
+carries on being the app. Nothing is written, so there is nothing to leave behind or
+conflict with, and no version of Onion is required.
+
 ### How A and B get delivered
 
 Two changes, in this order, because the first needs nothing from anybody and the second is
@@ -180,9 +208,15 @@ One that appears because they typed `/background` is a feature, and one they can
 reason about and stop. `/about` should report whether it is armed, because a thing whose
 state you cannot see is a thing you cannot trust.
 
-It keeps §2a intact with nothing left over — no boot hook, no patched OS files, nothing to
-undo at uninstall except stopping a process we started. Someone who never runs the command
-never has anything running.
+It satisfies rules 1 and 2 of §2a with nothing left over — no boot hook, no patched OS
+files, nothing to undo at uninstall except stopping a process we started. Someone who
+never runs the command never has anything running.
+
+**It does not satisfy rule 3, and no amount of design will make it.** Suspending a live
+emulator is reaching into somebody's game, and the failure mode is their unsaved progress.
+That is the argument for this stage staying opt-in behind a command the user types, rather
+than becoming how the app normally works — and for not starting it until B has shown that
+the menu route really is too slow.
 
 ### Reading input while a game runs
 

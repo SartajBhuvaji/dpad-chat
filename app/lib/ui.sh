@@ -6,7 +6,12 @@
 
 # Fallback width when the terminal does not report a size. `st` runs at a fixed
 # resolution, so a wrong guess is consistently wrong rather than intermittent.
-UI_DEFAULT_COLS=40
+#
+# 53 is measured, not estimated: it is what `/about` reports on the device. It
+# also settles what st is doing, which was guesswork before - 320 pixels across
+# at 6 pixels a glyph is 53 columns with nothing left for a border, so the
+# doubling to 640 happens after the grid is worked out.
+UI_DEFAULT_COLS=53
 UI_MIN_COLS=20
 
 # -----------------------------------------------------------------------------

@@ -19,8 +19,11 @@ RUN apk add --no-cache \
 
 WORKDIR /src
 
-# Match the device: a 40-column terminal, and writable state outside the tree.
-ENV COLUMNS=40 \
+# Match the device, and writable state outside the tree. 53 columns is what
+# /about reports on hardware; it was 40 here on an estimate that turned out to
+# be 13 columns narrow, so every wrap the suite exercised fell in the wrong
+# place for the screen it is meant to stand in for.
+ENV COLUMNS=53 \
     LINES=30 \
     DPAD_DATA_DIR=/tmp/dpad-chat
 

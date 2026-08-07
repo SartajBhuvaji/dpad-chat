@@ -396,7 +396,7 @@ make check
 | Target | Does |
 | --- | --- |
 | `make check` | lint + the full test suite. The default |
-| `make sim` | run the app locally, pinned to the device's 40-column terminal |
+| `make sim` | run the app locally, pinned to the device's 53-column terminal |
 | `make mock` | run the mock API on `:8080` to poke at by hand |
 | `make test-docker` | the same suite under Alpine's busybox ash |
 | `make package` | build `dist/DPadChat-vX.Y.Z.zip` and `.tar.gz` |

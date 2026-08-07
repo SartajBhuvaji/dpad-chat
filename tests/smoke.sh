@@ -8,7 +8,12 @@
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
+
+# Deliberately not the built-in fallbacks, so a run that ignored COLUMNS and
+# LINES entirely would report the defaults and fail rather than pass by
+# coincidence.
 COLS=40
+ROWS=24
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -18,7 +23,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Feed stdin to the app and capture everything it prints.
 run_app() {
-    COLUMNS="$COLS" DPAD_DATA_DIR="$WORK_DIR/data" NO_COLOR=1 \
+    COLUMNS="$COLS" LINES="$ROWS" DPAD_DATA_DIR="$WORK_DIR/data" NO_COLOR=1 \
         "$REPO_ROOT/app/chat.sh" 2>&1
 }
 
@@ -61,6 +66,7 @@ printf 'Running smoke tests\n'
 out=$(printf '/about\n/quit\n' | run_app)
 assert_contains '/about reports the version' "$out" 'version'
 assert_contains '/about reports the width' "$out" '40 cols'
+assert_contains '/about reports the height' "$out" '24 rows'
 assert_contains '/about reports a development host' "$out" 'development'
 
 out=$(printf '/help\n/quit\n' | run_app)

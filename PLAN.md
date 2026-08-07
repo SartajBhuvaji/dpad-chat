@@ -107,9 +107,12 @@ The buttons themselves are inherited from `st`'s keyboard (`keyboard.c`). What t
 
 ## 4. On-device mockups
 
-Drawn at **40 columns × 30 rows**, the likely grid for `st`'s doubled 8×8 pixel font on a
-640×480 panel. This is an estimate — the real count is open question #2 in §11, and every
-wrap width below shifts with it. Frames are cropped vertically to the interesting part.
+Drawn at **40 columns × 30 rows**. The real grid is **53 columns** — measured on hardware
+with `/about`, so `st` fits 320 pixels across at 6 pixels a glyph and doubles to 640
+afterwards, leaving nothing for a border. These frames are therefore 13 columns narrower
+than the screen they stand for. They are kept as drawn because none of them turns on the
+exact width, and redrawing them would churn the whole section to no end. Frames are
+cropped vertically to the interesting part.
 
 ### 4.1 Onion Apps menu
 
@@ -598,8 +601,11 @@ The keyboard is validated on hardware; everything else is validated in the conta
 
 1. Does `config.json` accept an icon path **relative to the app folder** (`res/icon.png`),
    or must it point into `/mnt/SDCARD/Icons/` the way built-in apps do?
-2. Exact terminal column/row count `st` reports at 640×480 — every mockup in §4 assumes
-   40×30, and the wrap width in §6 depends on it.
+2. ~~Exact terminal column/row count `st` reports at 640×480.~~ **Answered: 53 columns**,
+   measured with `/about` on hardware. The mockups in §4 are drawn at 40 and are that much
+   narrower than the real thing; they are kept for layout rather than redrawn, since none
+   of them turns on the exact width. The row count is still unconfirmed — `/about` reports
+   it now, so the next run on hardware settles it.
 3. Does busybox `sed` support `-u`, and does the device `jq` support `--unbuffered`?
 4. Does `st -e` need an absolute path, and does **Select**-to-quit exit cleanly enough to
    return to the Onion menu without a stuck process?

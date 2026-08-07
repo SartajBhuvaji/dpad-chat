@@ -45,8 +45,9 @@ discarded, because the first thing in a new chat should not be a note about the 
 ### `/about`
 
 ```
-version  0.7.0
-width    40 cols
+version  0.9.0
+width    53 cols
+height   30 rows
 host     Miyoo (Onion OS)
 model    gpt-4o-mini
 key      sk-pro...bXQA

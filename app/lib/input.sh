@@ -28,8 +28,13 @@
 # which at the speed anyone can type on a d-pad is not measurable.
 INPUT_ESC=$(printf '\033')
 INPUT_CR=$(printf '\r')
-INPUT_DEL=$(printf '\177')
 INPUT_EOT=$(printf '\004')
+
+# The two bytes a terminal sends for the key marked Backspace. Which one it is
+# depends on how the terminal was built rather than on anything visible to the
+# user, so both are bound: guessing wrong leaves the key doing nothing at all.
+INPUT_DEL=$(printf '\177')
+INPUT_BS=$(printf '\010')
 
 # Spelled out as a literal because command substitution strips trailing
 # newlines: $(printf '\n') is the empty string.
@@ -161,10 +166,11 @@ _input_byte() {
 # Consumes the rest of an escape sequence, leaving it in INPUT_KEY without the
 # leading ESC. Empty when the ESC stood alone.
 #
-# Nothing binds these yet, so every one of them is discarded - which is exactly
-# what stops Home from typing. The parse still happens because the bytes have
-# to be taken off the input either way; leaving them would put `[H` into the
-# message instead of `ESC [ H`.
+# Parsing and binding are separate on purpose. The bytes have to come off the
+# input whether or not the key means anything - leaving them would put `[H`
+# into the message instead of `ESC [ H` - so this consumes the sequence, and
+# input_readline decides what, if anything, it does. A key with no binding is
+# discarded by having nothing act on it, which is what stops Home from typing.
 _input_escape() {
     INPUT_KEY=''
 
@@ -332,8 +338,25 @@ input_readline() {
                 ;;
             "$INPUT_ESC")
                 _input_escape
+                case "$INPUT_KEY" in
+                    # Del. On a keyboard that also has a backspace this means
+                    # forward delete: drop the character the cursor is on and
+                    # pull the rest of the line left. The cursor cannot yet be
+                    # anywhere but the end of the line, so there is never a
+                    # character in front of it to remove, and the useful thing
+                    # to do in the position the key is actually pressed in is
+                    # to erase the one behind.
+                    #
+                    # #22 gives the cursor somewhere else to be, and the
+                    # forward case belongs with it.
+                    '[3~') _input_erase ;;
+
+                    # Every other sequence is a key with no binding. Consumed
+                    # by the parse above, which is what stops it being typed.
+                    *) ;;
+                esac
                 ;;
-            "$INPUT_DEL")
+            "$INPUT_DEL" | "$INPUT_BS")
                 _input_erase
                 ;;
             "$INPUT_EOT")

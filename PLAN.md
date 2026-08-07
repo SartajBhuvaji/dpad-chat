@@ -89,7 +89,8 @@ HOME=/mnt/SDCARD ./bin/st -e "$APPDIR/chat.sh"
 
 ## 3. Controls
 
-Inherited from `st`'s keyboard (`keyboard.c`), no work on our side:
+The buttons themselves are inherited from `st`'s keyboard (`keyboard.c`). What the keyboard
+*sends* still has to be interpreted, though — see [§5.1](#51-reading-a-line):
 
 | Button | Action |
 |---|---|
@@ -267,7 +268,7 @@ startup
   └─ print banner + control hints
 
 repl
-  ├─ printf "\n> " ; IFS= read -r line
+  ├─ printf "\n> " ; input_readline        (see 5.1)
   ├─ slash commands: /help /clear /model /key /quit
   ├─ append {role:user} to history.json
   ├─ build payload with jq  (never string-interpolate user text)
@@ -294,6 +295,44 @@ jq '.[0:1] + (.[1:] | .[-10:])' "$HISTORY"
 **RAM and screen budget.** 128 MB total and a 640×480 pixel font mean long replies are
 painful. v1 ships a system prompt of *"Answer concisely. Stay under 120 words unless the
 user asks for detail."* plus `max_tokens: 512`, both overridable in `settings.cfg`.
+
+### 5.1 Reading a line
+
+The prompt originally used the shell's `read` builtin, which leaves the terminal in
+**canonical mode**. There the kernel's line discipline owns echo and editing, and it has
+two limits that turn out to matter a great deal on a handheld:
+
+- it understands exactly one editing key, ERASE, and rubs a character out with `\b \b`,
+  which cannot cross a wrapped row
+- it has no notion of escape sequences, so every other key on the keyboard is echoed as
+  its raw bytes and appended to the message
+
+That is where four separate device bugs came from — Home, Del and the arrow keys typing
+gibberish, and backspace stalling at the wrap point. None of them are fixable while the
+kernel is doing the editing, so `app/lib/input.sh` takes the terminal raw (`-icanon
+-echo`) and does the work itself: one byte at a time, rendering the line, consuming a
+multi-byte key as a single unit, and discarding anything it does not bind.
+
+Notes that are easy to get wrong:
+
+- **Bytes are read with `dd`, not `read -n 1`.** `-n` is a bashism that busybox ash
+  supports and dash does not. The suite runs under dash and the device runs busybox, so
+  the portable primitive is what keeps the tested code identical to the shipped code.
+- **Raw mode is entered per line, not held for the session.** While a reply downloads the
+  terminal is in its normal state, so a crash mid-request cannot strand the user with a
+  terminal that has no echo. `input_restore` is also wired into the exit trap.
+- **Escape sequences need a read timeout.** A lone ESC has no continuation, so the
+  follow-up read is given 0.2 s to produce one and then gives up, rather than hanging
+  until the next keypress.
+- **No terminal means no editor.** Piped input falls back to `read`, which is what the
+  test suite and `echo /about | tools/simulate.sh` go through.
+
+Testing it needs a real pty, since raw mode and echo do not exist without one.
+`tests/keys.py` supplies one, and avoids the usual race — a pty starts with echo on, so
+anything written before the program takes the terminal raw is echoed by the kernel and
+pollutes the capture — by polling the terminal for ECHO to clear before writing a byte.
+That is deterministic where a `sleep` is not, and it doubles as proof that raw mode was
+entered at all.
 
 ---
 

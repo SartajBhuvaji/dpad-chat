@@ -40,7 +40,8 @@ main() {
 
     if ! is_an_install "$resolved"; then
         say "refusing to delete $resolved"
-        say 'it does not look like a D-Pad Chat install'
+        say 'it does not look like a D-Pad Chat'
+        say 'install.'
         return 1
     fi
 
@@ -51,13 +52,15 @@ main() {
 
     if ! rm -rf "$resolved" 2>/dev/null; then
         say "could not remove $resolved"
-        say 'the card may be write-protected or mounted read-only.'
+        say 'the card may be write-protected or'
+        say 'mounted read-only.'
         return 1
     fi
 
     if [ -d "$resolved" ]; then
         say "part of $resolved is still there"
-        say 'delete the folder from a computer to finish.'
+        say 'delete the folder from a computer'
+        say 'to finish.'
         return 1
     fi
 
@@ -65,8 +68,9 @@ main() {
     say 'D-Pad Chat has been removed.'
     printf '\n'
     say 'Your API key went with it. Revoke it at'
-    say 'platform.openai.com/api-keys if the card or'
-    say 'the device is going to someone else.'
+    say 'platform.openai.com/api-keys if the'
+    say 'card or the device is going to'
+    say 'someone else.'
     printf '\n'
 
     # The work directory is the copy this script is running from. Removing it

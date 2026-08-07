@@ -45,6 +45,9 @@ jobs:
       - name: Status bars and waiting indicator
         run: tests/screen.sh
 
+      - name: Line editor
+        run: tests/input.sh
+
       - name: Update tests
         run: tests/update.sh
 

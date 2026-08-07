@@ -46,6 +46,11 @@ INPUT_ESC_DELAY=2
 # noise, and without a ceiling a stuck terminal would spin here forever.
 INPUT_SEQ_MAX=16
 
+# Below two columns every column is a wrap boundary and the position arithmetic
+# stops meaning anything. It is also what a terminal with no size reports, so
+# this doubles as the "width unknown" case.
+INPUT_MIN_COLS=2
+
 # -----------------------------------------------------------------------------
 # Setup
 # -----------------------------------------------------------------------------
@@ -55,6 +60,8 @@ input_init() {
     INPUT_KEY=''
     _INPUT_STTY=''
     INPUT_TTY=0
+    INPUT_COLS=$(_input_detect_cols)
+    INPUT_START_COL=0
 
     # stdin carries the keystrokes and stdout is where the line is drawn, so
     # both have to be a terminal. dd and stty are busybox builtins on the
@@ -67,6 +74,40 @@ input_init() {
     fi
 
     return 0
+}
+
+# Erasing across a wrapped row needs the terminal's width: without it there is
+# no way to tell that a wrap happened at all, let alone which column to move
+# back to.
+#
+# The same three sources ui.sh uses, in the same order, because the editor and
+# the renderer disagreeing about how wide a row is would put the wrap in two
+# different places. ui.sh's already-detected value comes first so that in the
+# app there is only ever one answer; the rest is for this file used alone.
+#
+# COLUMNS before the terminal, since it is how the harness and
+# tools/simulate.sh pin a device-shaped width onto a terminal that is not one.
+#
+# Reports 0 when the width cannot be established. Every caller treats that as
+# "stay on one row" rather than guessing, because a wrong width would move the
+# cursor to the wrong column and corrupt what is on screen.
+_input_detect_cols() {
+    _in_c="${UI_COLS:-}"
+    [ -n "$_in_c" ] || _in_c="${COLUMNS:-}"
+
+    if [ -z "$_in_c" ] && command -v stty >/dev/null 2>&1; then
+        # Not simply the terminal's own answer under busybox: its stty falls
+        # back to $COLUMNS when the window size is unset, which is why that is
+        # read above rather than left to surface here as a different number.
+        _in_c=$(stty size 2>/dev/null | cut -d' ' -f2)
+    fi
+
+    case "$_in_c" in
+        '' | *[!0-9]*) _in_c=0 ;;
+    esac
+
+    [ "$_in_c" -ge "$INPUT_MIN_COLS" ] || _in_c=0
+    printf '%s' "$_in_c"
 }
 
 # Raw mode is entered per line rather than held for the session. While a reply
@@ -170,19 +211,76 @@ _input_escape() {
 # Editing
 # -----------------------------------------------------------------------------
 
+# Where the cursor is, in the terminal's own terms, is the whole difficulty
+# here. The line starts at column INPUT_START_COL of some row, and from there
+# the character at offset n of the buffer sits at absolute column
+# INPUT_START_COL + n, which is row (that / INPUT_COLS), column (that %
+# INPUT_COLS). That arithmetic is only trustworthy because of the wrap forced
+# in _input_insert; see the note there.
+#
+# It holds for as long as every row of the line is still on screen. A line long
+# enough to fill the scrolling region pushes its own first rows off the top,
+# and erasing back into one of those would write where it used to be. That
+# needs a full repaint to fix rather than better arithmetic, and it takes
+# roughly 1400 characters to reach on the device, so it is left alone.
 _input_insert() {
     INPUT_LINE="$INPUT_LINE$1"
     printf '%s' "$1"
+
+    [ "$INPUT_COLS" -ge "$INPUT_MIN_COLS" ] || return 0
+
+    # Filling the last column of a row does not move the cursor to the next
+    # row. The terminal leaves it on the last column with the wrap pending and
+    # acts on it only when the next character arrives, so at this moment the
+    # cursor's row is genuinely ambiguous: it is one row above where the
+    # arithmetic above says it is, until something else is printed.
+    #
+    # Forcing the wrap now settles it. The row the cursor moves to is the row
+    # it was going to move to anyway on the next keystroke, so nothing is
+    # displaced - and every relative move made afterwards starts from a
+    # position that matches the arithmetic instead of being off by one.
+    if [ $(((INPUT_START_COL + ${#INPUT_LINE}) % INPUT_COLS)) -eq 0 ]; then
+        printf '\r\n'
+    fi
+
+    return 0
 }
 
+# Removes the character before the cursor from the buffer and from the screen.
+#
+# The line discipline used to do this with `\b \b`, which only ever works
+# inside one row: at column 0 a backspace has nowhere to go, so the character
+# at the end of the row above stayed on screen even though it had already been
+# dropped from the message being sent. Moving up explicitly is what makes
+# erasing continue across the boundary.
 _input_erase() {
     [ -n "$INPUT_LINE" ] || return 0
+
+    _in_len=${#INPUT_LINE}
     INPUT_LINE=${INPUT_LINE%?}
 
-    # Rubs the character out in place, which is what the line discipline did
-    # before this file existed. It cannot cross a wrapped row - at column 0 a
-    # backspace has nowhere to go - and that limitation is issue #20.
-    printf '\b \b'
+    if [ "$INPUT_COLS" -lt "$INPUT_MIN_COLS" ]; then
+        # No width, so a wrap cannot be located. Rubbing the character out in
+        # place is right on a single row and stuck at the boundary, which is
+        # the old behaviour: a prompt that edits within one row beats one that
+        # moves the cursor somewhere the terminal was not.
+        printf '\b \b'
+        return 0
+    fi
+
+    # Absolute column of the character being removed. The cursor is one column
+    # further on, so the two can fall on different rows - which is exactly the
+    # case that was broken.
+    _in_at=$((INPUT_START_COL + _in_len - 1))
+    _in_up=$(((_in_at + 1) / INPUT_COLS - _in_at / INPUT_COLS))
+    _in_col=$((_in_at % INPUT_COLS + 1))
+
+    [ "$_in_up" -eq 0 ] || printf '\033[%dA' "$_in_up"
+
+    # Absolute column rather than backspaces: CHA lands on the column named
+    # regardless of where the cursor started, and it clears any pending wrap
+    # left over from the row above.
+    printf '\033[%dG \033[%dG' "$_in_col" "$_in_col"
     return 0
 }
 
@@ -192,8 +290,27 @@ _input_erase() {
 
 # Reads one line into INPUT_LINE. Returns non-zero at end of input, which is
 # how the REPL learns that `st` has exited or the pipe has closed.
+#
+# $1 is how many columns the prompt already drew on this row, so the editor
+# knows which column the line starts in. Getting it wrong only misplaces the
+# cursor by that much, so callers with no prompt can leave it out.
 input_readline() {
     INPUT_LINE=''
+    INPUT_START_COL=0
+
+    # Defaulted once, into a variable: the argument is optional, and under
+    # `set -u` a bare $1 anywhere below would abort the session rather than
+    # fall back to zero.
+    _in_p="${1:-0}"
+
+    # A prompt long enough to wrap leaves the cursor part-way along its last
+    # row, and that row is the one the line starts on.
+    if [ "$INPUT_COLS" -ge "$INPUT_MIN_COLS" ]; then
+        case "$_in_p" in
+            '' | *[!0-9]*) ;;
+            *) INPUT_START_COL=$((_in_p % INPUT_COLS)) ;;
+        esac
+    fi
 
     if [ "${INPUT_TTY:-0}" -ne 1 ] || ! _input_raw_on; then
         IFS= read -r INPUT_LINE || return 1

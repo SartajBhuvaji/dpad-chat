@@ -73,6 +73,9 @@ piped() {
         # shellcheck source=../app/lib/input.sh
         . "$REPO_ROOT/app/lib/input.sh"
         input_init
+        # Called bare on purpose: the prompt width is optional, and this is
+        # what exercises the default.
+        # shellcheck disable=SC2119
         if input_readline; then
             printf '0:%s' "$INPUT_LINE"
         else
@@ -90,6 +93,25 @@ assert_eq 'a backslash is not an escape' "$(printf 'a\\b\n' | piped)" '0:a\b'
 # put into raw mode, so the bytes are taken literally rather than parsed.
 assert_eq 'escapes are literal when piped' \
     "$(printf 'a\033[Hb\n' | piped)" "0:a${ESC}[Hb"
+
+# The prompt width is an optional argument, and the arithmetic using it only
+# runs once a width is known. A bare $1 in there is fatal under `set -u`, which
+# every script here and the app itself run with - but with no width the block
+# is skipped and nothing springs the trap, so one is pinned to make sure it is
+# reached with no argument to find.
+assert_eq 'a bare call is safe once a width is known' \
+    "$(printf 'hi\n' | (
+        # Local to this subshell on purpose: the width is for this one case and
+        # must not follow the rest of the file.
+        # shellcheck disable=SC2030
+        COLUMNS=40
+        export COLUMNS
+        # shellcheck source=../app/lib/input.sh
+        . "$REPO_ROOT/app/lib/input.sh"
+        input_init
+        # shellcheck disable=SC2119
+        input_readline && printf '0:%s' "$INPUT_LINE"
+    ))" '0:hi'
 
 assert_eq 'no terminal means no raw mode' \
     "$(printf 'x\n' | (
@@ -111,10 +133,20 @@ cat >"$DRIVER" <<'DRIVER_EOF'
 set -eu
 # shellcheck source=/dev/null
 . "$REPO_ROOT/app/lib/input.sh"
+
+# The harness pins COLUMNS to the device width for the whole suite, so a case
+# wanting a different one - or none at all - has to say so here.
+if [ -n "${DRIVER_COLS:-}" ]; then
+    COLUMNS="$DRIVER_COLS"
+    export COLUMNS
+else
+    unset COLUMNS
+fi
+
 input_init
 
 before=$(stty -g)
-if input_readline; then
+if input_readline "${DRIVER_PROMPT_COLS:-0}"; then
     rc=0
 else
     rc=1
@@ -124,6 +156,7 @@ after=$(stty -g)
 {
     printf 'rc=%s\n' "$rc"
     printf 'raw=%s\n' "$INPUT_TTY"
+    printf 'cols=%s\n' "$INPUT_COLS"
     if [ "$before" = "$after" ]; then
         printf 'tty=restored\n'
     else
@@ -135,18 +168,40 @@ DRIVER_EOF
 chmod +x "$DRIVER"
 
 DRIVER_OUT="$WORK_DIR/driver.out"
-export REPO_ROOT DRIVER_OUT
+DRIVER_PROMPT_COLS=0
+DRIVER_COLS=''
+export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS
 
 # Types the given keystrokes at a pty and leaves the outcome in KEYS_RC,
 # KEYS_LINE and KEYS_ECHO. KEYS_ECHO is everything the editor drew, with none
 # of the kernel's own echo mixed in; see tests/keys.py for how that is arranged.
+#
+# $2 is the terminal width, defaulting to something wide enough that nothing
+# wraps. The wrap cases pass a small one so a boundary is a few keys away.
+#
+# $3 says where the editor should find that width: `env` puts it in COLUMNS,
+# the way the harness and tools/simulate.sh do, and `tty` leaves the terminal
+# as the only thing that knows. Both have to work, and which one answers has to
+# be the same everywhere - busybox's stty consults COLUMNS itself when the
+# window size is unset, so a case that left both in play would read 40 under
+# the harness and 10 here.
 keys() {
+    _k_cols="${2:-80}"
+
+    case "${3:-env}" in
+        env) DRIVER_COLS="$_k_cols" ;;
+        *) DRIVER_COLS='' ;;
+    esac
+    export DRIVER_COLS
+
     : >"$DRIVER_OUT"
-    KEYS_ECHO=$("$REPO_ROOT/tests/keys.py" --input "$1" -- "$DRIVER" 2>/dev/null) || :
+    KEYS_ECHO=$("$REPO_ROOT/tests/keys.py" --cols "$_k_cols" --input "$1" \
+        -- "$DRIVER" 2>/dev/null) || :
     KEYS_RC=$(sed -n 's/^rc=//p' "$DRIVER_OUT")
     KEYS_LINE=$(sed -n 's/^line=//p' "$DRIVER_OUT")
     KEYS_TTY=$(sed -n 's/^tty=//p' "$DRIVER_OUT")
     KEYS_RAW=$(sed -n 's/^raw=//p' "$DRIVER_OUT")
+    KEYS_COLS=$(sed -n 's/^cols=//p' "$DRIVER_OUT")
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -193,11 +248,16 @@ else
     keys 'x\033[38;5;120my\r'
     assert_eq 'a long parameter list is consumed' "$KEYS_LINE" 'xy'
 
-    # Backspace still works exactly as the line discipline made it work. This
-    # is deliberately unchanged here; erasing across a wrapped row is #20.
     keys 'abc\177\r'
     assert_eq 'backspace removes the last character' "$KEYS_LINE" 'ab'
-    assert_contains 'backspace rubs the character out' "$KEYS_ECHO" "$(printf 'c\b \b')"
+
+    # Column 3 holds the `c`: the cursor goes there, writes a space over it and
+    # comes back. Naming the column rather than backspacing is what lets the
+    # same code step onto the row above.
+    assert_contains 'backspace writes over the character' \
+        "$KEYS_ECHO" "$(printf '\033[3G \033[3G')"
+    assert_not_contains 'and nothing moves rows on a line that never wrapped' \
+        "$KEYS_ECHO" "$(printf '\033[1A')"
 
     keys '\177\177x\r'
     assert_eq 'backspace on an empty line is harmless' "$KEYS_LINE" 'x'
@@ -243,6 +303,91 @@ else
     # would spin here forever.
     keys 'a\033[111111111111111111111111Zb\r'
     assert_eq 'an overlong sequence still terminates' "$KEYS_RC" '0'
+
+    # -------------------------------------------------------------------------
+    # Issue #20: erasing across a wrapped row
+    # -------------------------------------------------------------------------
+
+    printf '\nErasing across a wrap\n'
+
+    # Ten columns, so a boundary is ten keys away instead of eighty.
+    keys 'abc\r' 10
+    assert_eq 'the width is taken from COLUMNS' "$KEYS_COLS" '10'
+
+    # And from the terminal itself when nothing has pinned one, which is how
+    # the app runs on the device.
+    keys 'abc\r' 10 tty
+    assert_eq 'or from the terminal when COLUMNS says nothing' "$KEYS_COLS" '10'
+
+    # The case from the report. Ten characters exactly fill the row, so the
+    # cursor is at the start of the next one and the character to remove is on
+    # the row above. `\b` could not get there and the character stayed on
+    # screen after it had already left the message.
+    keys 'abcdefghij\177\r' 10
+    assert_eq 'the character at the boundary is removed' "$KEYS_LINE" 'abcdefghi'
+    assert_contains 'and erasing steps up to the row above' \
+        "$KEYS_ECHO" "$(printf '\033[1A')"
+    assert_contains 'onto the last column of it' \
+        "$KEYS_ECHO" "$(printf '\033[10G \033[10G')"
+
+    # The whole exchange, byte for byte, because the assertions above each
+    # cover one part of it and would all still pass if the parts arrived in the
+    # wrong order. Reading left to right: the ten characters; the wrap forced
+    # once the row is full; up one row, over to the last column, a space over
+    # the character, back to the column; then the newline that submits.
+    #
+    # The doubled carriage returns are the terminal's own doing - ONLCR turns
+    # every newline written into one - and are what the capture really holds.
+    assert_eq 'the erase is drawn exactly this way' "$KEYS_ECHO" \
+        "$(printf 'abcdefghij\r\r\n\033[1A\033[10G \033[10G\r\n')"
+
+    # One short of the boundary: same line, no wrap involved, so nothing should
+    # move rows. This is what proves the step up is driven by the arithmetic
+    # rather than emitted on every erase.
+    keys 'abcdefghi\177\r' 10
+    assert_eq 'a character below the boundary is removed too' "$KEYS_LINE" 'abcdefgh'
+    assert_not_contains 'without changing rows' "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    # Three rows, erased back to the first. Both boundaries have to be crossed,
+    # and the buffer has to survive twenty erases in a row.
+    keys 'abcdefghijklmnopqrstuvwxy\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177\r' 10
+    assert_eq 'erasing runs back through more than one wrap' "$KEYS_LINE" 'abcde'
+
+    # Erasing the whole thing away must not walk off the top of the line: the
+    # buffer empties and further presses do nothing.
+    keys 'abcdefghijkl\177\177\177\177\177\177\177\177\177\177\177\177\177\177\177ok\r' 10
+    assert_eq 'erasing past the start stops at the start' "$KEYS_LINE" 'ok'
+
+    # With a prompt in front of it the line no longer starts at column 0, so
+    # the boundary arrives earlier. Eight characters after a two-column prompt
+    # fill the row.
+    DRIVER_PROMPT_COLS=2
+    keys 'abcdefgh\177\r' 10
+    assert_eq 'a prompt shifts where the row ends' "$KEYS_LINE" 'abcdefg'
+    assert_contains 'and erasing still steps up' "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    # The same eight characters with no prompt do not reach the boundary,
+    # which is what shows the prompt width is being applied rather than ignored.
+    DRIVER_PROMPT_COLS=0
+    keys 'abcdefgh\177\r' 10
+    assert_not_contains 'and without the prompt they do not reach it' \
+        "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    # A width too small to hold a wrap, which is how a terminal that cannot say
+    # how wide it is arrives here. Wraps cannot be located, so the editor stays
+    # on one row rather than moving the cursor somewhere it guessed.
+    #
+    # Pinned through COLUMNS rather than by leaving the terminal unsized,
+    # because the two implementations disagree on what an unsized terminal
+    # reports: coreutils stty prints 0, and busybox substitutes 80 rather than
+    # admitting it does not know. Only the pinned form means the same thing in
+    # both places - and on the device that busybox fallback is why the width
+    # always resolves to something.
+    keys 'abc\177\r' 0
+    assert_eq 'too narrow to wrap is reported as zero' "$KEYS_COLS" '0'
+    assert_eq 'and the line is still edited' "$KEYS_LINE" 'ab'
+    assert_contains 'by rubbing the character out in place' \
+        "$KEYS_ECHO" "$(printf '\b \b')"
 fi
 
 # -----------------------------------------------------------------------------

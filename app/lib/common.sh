@@ -6,7 +6,7 @@
 
 # Consumed by the scripts that source this file.
 # shellcheck disable=SC2034
-DPADCHAT_VERSION='0.8.0'
+DPADCHAT_VERSION='0.8.1'
 
 # Root of Onion's bundled binaries and shared libraries. Its presence is also
 # what tells the app it is on a device rather than a desktop, so the tests point

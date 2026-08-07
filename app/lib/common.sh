@@ -6,7 +6,7 @@
 
 # Consumed by the scripts that source this file.
 # shellcheck disable=SC2034
-DPADCHAT_VERSION='0.7.3'
+DPADCHAT_VERSION='0.7.4'
 
 # Root of Onion's bundled binaries and shared libraries.
 ONION_SYSDIR='/mnt/SDCARD/.tmp_update'

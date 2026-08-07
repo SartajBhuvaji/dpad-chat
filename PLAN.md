@@ -658,6 +658,10 @@ that out after the download is too late. Both are byte-reproducible from the sam
 Native SDL UI via `libkbinput`, multiple saved chats, image input, alternate providers,
 and any support for the non-WiFi original Mini.
 
+Where the native UI would lead — summoning the app over a running game — is staged in
+[ROADMAP.md](ROADMAP.md), along with the questions that have to be answered on hardware
+before any of it can be costed.
+
 Conversation persistence *was* on this list. The reasoning was that resuming a
 conversation whose start has scrolled away is more confusing than beginning a new one —
 which turned out to be an argument for replaying the recent turns on screen, not for

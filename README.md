@@ -69,6 +69,7 @@ Already installed? Type `/update`. Done with it? Type `/uninstall`.
 | **[GUIDE.md](GUIDE.md)** | installing, setting the key, upgrading, troubleshooting, building |
 | **[COMMANDS.md](COMMANDS.md)** | slash commands, controls, status bar, every setting |
 | **[PLAN.md](PLAN.md)** | design record — why it is built this way, and what was left out |
+| **[ROADMAP.md](ROADMAP.md)** | where it is going, and what has to be found out first |
 
 ## License
 

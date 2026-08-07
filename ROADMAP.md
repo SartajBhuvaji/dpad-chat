@@ -141,11 +141,31 @@ That is a file read and a string, not a daemon.
 The card was read in exactly the state this feature exists for: *Road Rash* being played,
 Menu pressed to come out of it, nothing else done in between.
 
-**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` does not exist** — not even then. The
-documentation describing it as the auto-resume command is either about a different Onion
-version or about a file that only lives at boot. It is dropped from the design rather than
-guarded around: nothing should depend on a file that was absent at the one moment it was
-supposed to be there.
+**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` was not there** — not even then. It is dropped
+from the design rather than guarded around: nothing should depend on a file that was
+absent at the one moment it was supposed to be there.
+
+> **Since corrected twice, and now left as observations rather than a theory.** It is the
+> auto-resume file and it is real — Onion's FAQ documents deleting it as the way out of a
+> ROM that black-screens on every boot. Two mechanisms were proposed for when it exists
+> and both were wrong, so what stands is only what was measured:
+>
+> | When | Present? |
+> | --- | --- |
+> | just after a boot | no |
+> | after Menu out of a game, first reading | no |
+> | after Menu out of a game, second reading | **yes** — `tools/reboot.sh` cleared one |
+> | while a game is in the foreground | cannot say; SSH is refused then |
+>
+> The two middle rows are the same described action with opposite results. The likeliest
+> guess is that they were different actions, one game exited and the other left running,
+> but it stays a guess.
+>
+> **This reopens something §4 closed.** If the file is present exactly when a game is
+> suspended, it is the *"a game is loaded right now"* signal that section says does not
+> exist — which would let a stale suggestion be suppressed rather than absorbed by the
+> interaction. Two readings that disagree are nowhere near enough to build on, and stage B
+> works without it, so this is filed as a question and not a plan. See question 10.
 
 **`/mnt/SDCARD/Roms/recentlist.json` is real, and is better than expected.** It is
 newline-delimited JSON — one object per line, no enclosing array — which `jq` reads
@@ -419,7 +439,9 @@ blocks nothing. The rest belong to stages C and D, are not being worked on, and 
 so the reasons behind the staging survive.
 
 1. ~~Do the two files exist and hold what is claimed?~~ **Answered.**
-   `.tmp_update/cmd_to_run.sh` was not there and is dropped; `Roms/recentlist.json` is real,
+   `.tmp_update/cmd_to_run.sh` was not there and is dropped — it is the auto-resume file,
+   written at shutdown rather than while a game runs, so it can never answer what is
+   running now; `Roms/recentlist.json` is real,
    is newline-delimited JSON, and carries a `label` — and also carries this app, which is
    why §4 keys on `rompath`. **Stage B is no longer waiting on anything.**
 2. ~~What state does switching back leave the game in?~~ **Answered: resumable.** Menu out
@@ -452,6 +474,19 @@ so the reasons behind the staging survive.
    people already do it — but if memory ran out while we held a reply, what the kernel
    reclaimed could be somebody's game, which is the one thing §2a says must not happen.
    Worth measuring once stage B is on the device, rather than assumed either way.
+
+10. **Is `cmd_to_run.sh` present exactly while a game is suspended?** Two readings taken
+    after the same described action disagree — see the note in §4. If the answer is yes,
+    it is the signal §4 concluded does not exist, and a stale suggestion could be
+    suppressed instead of merely being cheap to dismiss. If it is no, or if it depends on
+    something nobody has identified, then §4 stands as written and this is closed.
+
+    Cheap to settle and needs no code: read the file after exiting a game, and again after
+    leaving one running. It only becomes worth acting on if stale suggestions turn out to
+    grate in practice, which is a question about using stage B rather than about this file.
+
+    Note that `tools/reboot.sh` deletes this file, so a session that ran it has disturbed
+    the thing being measured.
 
 ---
 

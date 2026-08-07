@@ -98,8 +98,8 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
         tests/net.sh tests/history.sh tests/release.sh tests/install.sh \
         tests/stream.sh tests/screen.sh tests/update.sh tests/uninstall.sh \
         tests/arrival.py \
-        tests/input.sh tests/keys.py tests/game.sh \
-        tools/install.sh \
+        tests/input.sh tests/keys.py tests/game.sh tests/reboot.sh \
+        tools/install.sh tools/reboot.sh \
         tools/lint.sh tools/simulate.sh tools/version.sh \
         tools/fetch-cacert.sh tools/make_icon.py tools/mockapi.py \
         tools/package.py; do

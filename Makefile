@@ -11,7 +11,7 @@ HOST  ?=
 # Onion's documented login. USER is a shell builtin in make, so it is renamed.
 USER_ ?= onion
 
-.PHONY: help check lint test mock sim icon cacert package version install-key docker-build test-docker shell-docker install install-ssh clean
+.PHONY: help check lint test mock sim icon cacert package version install-key docker-build test-docker shell-docker install install-ssh reboot clean
 
 help:
 	@echo 'Targets:'
@@ -29,6 +29,7 @@ help:
 	@echo '  install       copy to an SD card    (make install CARD=/media/me/MIYOO)'
 	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42 [USER=onion])'
 	@echo '  install-key   push over SSH and set the API key (prompts, never echoed)'
+	@echo '  reboot        restart the device       (make reboot HOST=192.168.1.42)'
 	@echo '  clean         remove local run state'
 
 check: lint test
@@ -47,6 +48,7 @@ test:
 	@tests/screen.sh
 	@tests/input.sh
 	@tests/game.sh
+	@tests/reboot.sh
 	@tests/update.sh
 	@tests/uninstall.sh
 
@@ -87,6 +89,10 @@ install-ssh:
 
 # The key is prompted for, never taken as a variable: make variables are
 # visible in the process list and land in shell history.
+reboot:
+	@test -n '$(HOST)' || { echo 'usage: make reboot HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@DPAD_SSH_USER='$(USER_)' tools/reboot.sh '$(HOST)'
+
 install-key:
 	@test -n '$(HOST)' || { echo 'usage: make install-key HOST=<ip> [USER=onion]' >&2; exit 1; }
 	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)' --key

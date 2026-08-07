@@ -47,6 +47,7 @@ test:
 	@tests/screen.sh
 	@tests/input.sh
 	@tests/update.sh
+	@tests/uninstall.sh
 
 sim:
 	@tools/simulate.sh

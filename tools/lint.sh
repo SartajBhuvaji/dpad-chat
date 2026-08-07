@@ -93,10 +93,11 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # Checkouts on a Windows filesystem silently drop the mode bit, which fails
     # only once CI or the device tries to run the file. Assert on the index
     # rather than the working tree, since the index is what gets pushed.
-    for entry in app/chat.sh app/launch.sh app/apply-update.sh \
+    for entry in app/chat.sh app/launch.sh app/apply-update.sh app/uninstall.sh \
         tests/smoke.sh tests/api.sh \
         tests/net.sh tests/history.sh tests/release.sh tests/install.sh \
-        tests/stream.sh tests/screen.sh tests/update.sh tests/arrival.py \
+        tests/stream.sh tests/screen.sh tests/update.sh tests/uninstall.sh \
+        tests/arrival.py \
         tests/input.sh tests/keys.py \
         tools/install.sh \
         tools/lint.sh tools/simulate.sh tools/version.sh \

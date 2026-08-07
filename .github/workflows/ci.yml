@@ -51,6 +51,9 @@ jobs:
       - name: Update tests
         run: tests/update.sh
 
+      - name: Uninstall tests
+        run: tests/uninstall.sh
+
   busybox:
     name: Busybox (device userland)
     runs-on: ubuntu-latest

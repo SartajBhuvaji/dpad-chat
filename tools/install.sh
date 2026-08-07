@@ -202,7 +202,8 @@ install_card() {
 
     # FAT32 carries no permission bits, but setting them keeps a card imaged
     # onto a Linux filesystem working, and is harmless otherwise.
-    chmod 755 "$dest/launch.sh" "$dest/chat.sh" "$dest/apply-update.sh" 2>/dev/null || :
+    chmod 755 "$dest/launch.sh" "$dest/chat.sh" "$dest/apply-update.sh" \
+        "$dest/uninstall.sh" 2>/dev/null || :
 
     printf 'Done. Eject the card and open Apps > D-Pad Chat.\n'
 }

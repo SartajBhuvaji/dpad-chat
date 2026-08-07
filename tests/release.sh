@@ -127,6 +127,7 @@ for required in \
     'App/DPadChat/config.json' \
     'App/DPadChat/launch.sh' \
     'App/DPadChat/chat.sh' \
+    'App/DPadChat/uninstall.sh' \
     'App/DPadChat/res/cacert.pem' \
     'App/DPadChat/res/icon.png'; do
     case "$listing" in
@@ -153,7 +154,7 @@ esac
 modes=$(python3 -c "
 import sys, zipfile
 for i in zipfile.ZipFile(sys.argv[1]).infolist():
-    if i.filename.endswith(('launch.sh', 'chat.sh')):
+    if i.filename.endswith(('launch.sh', 'chat.sh', 'apply-update.sh', 'uninstall.sh')):
         print(oct(i.external_attr >> 16)[2:])
 " "$ARCHIVE")
 

@@ -270,12 +270,36 @@ If you want a genuinely clean install, delete `App/DPadChat/` from the card firs
 
 ## Uninstalling
 
-Delete `App/DPadChat/` from the SD card. That is the whole install — nothing is written
-outside that folder, and nothing is registered anywhere else.
+**From the device.** Open the app and type `/uninstall`. It says what will go, asks
+twice, and then deletes `App/DPadChat/` — the app, your key, the conversation and the
+log. Press **Select** on the report to return to the Apps menu.
+
+```
+Uninstalling deletes this folder:
+  /mnt/SDCARD/App/DPadChat
+
+Your API key, this chat and the log go
+with it. Nothing is kept, and there is
+no undo.
+
+Uninstall D-Pad Chat? [y/N]
+```
+
+Onion reads the Apps menu at boot, so the tile may still be there until you restart the
+device. Opening it after the folder is gone does nothing.
+
+**From a computer.** Delete `App/DPadChat/` from the SD card. That is the whole install —
+nothing is written outside that folder, and nothing is registered anywhere else. This is
+also the way out if the card is write-protected, which is the one thing `/uninstall`
+cannot work around: it reports the failure and leaves the app running.
 
 **Your API key is in `App/DPadChat/data/settings.cfg`.** If the card or the device is
 going to someone else, delete the folder rather than just removing the app from the menu,
 and consider revoking the key at [platform.openai.com/api-keys][keys].
+
+There is no uninstall entry in Onion's Apps menu, and no app can add one: that menu is
+MainUI's, and an app cannot put a command into the list that launches it. `/uninstall` is
+inside the app for the same reason `/update` is.
 
 ---
 

@@ -78,12 +78,55 @@ decides the install story:
    argue for not shipping B at all rather than shipping that**, or at most shipping it as
    something clearly opt-in and clearly separate.
 
-There is a middle ground worth keeping in mind if 1 and 2 both fail: **arm the watcher
-from `launch.sh`**, so opening the app once after a reboot enables the hotkey until the
-device is powered off. No setup, nothing installed, nothing patched — it simply does not
-survive a cold boot until it has been opened once. Given how rarely these get fully
-powered down rather than slept, that may be an acceptable version of the feature, and it
-is strictly better than asking anyone to patch their OS.
+### `/background` — the way out of 3
+
+If 1 and 2 both fail, the answer is not to install anything. It is to let the user arm it
+themselves, from inside the app: **`/background` detaches a watcher and returns to the
+menu.** Go and play; the chord works; run it again to switch it off.
+
+This is better than arming it from `launch.sh`, which was the earlier idea here, and
+better for a reason worth stating: **it is consented to.** A background process that
+appears because someone opened an app once is a surprise. One that appears because they
+typed `/background` is a feature, and one they can reason about, find and stop. `/about`
+should report whether it is armed, because a thing you cannot see the state of is a thing
+you cannot trust.
+
+It also keeps §2a intact with nothing left over. No boot hook, no patched OS files,
+nothing to undo at uninstall except stopping a process we started. Someone who never runs
+the command never has anything running.
+
+**What it does not solve.** Consent and installation are one of three hard parts. The
+other two are unaffected: taking the screen from a suspended emulator is still research
+question 3, and watching the input device cheaply is still open — see below, because it is
+the part that may force our hand.
+
+### The cost of watching input
+
+A watcher is idle until a button is pressed. During a game, buttons are pressed
+constantly, and every one of them wakes it. In shell that means a fork per press, in the
+middle of the one activity where the CPU is already committed and the battery is the
+thing being spent.
+
+That may be what forces a small native helper — and it is worth noting how small. An input
+watcher that blocks on `/dev/input/event0`, matches a chord and signals is perhaps a
+hundred lines of C, against the full framebuffer-blending UI of stage C. If a compiler
+becomes necessary, it becomes necessary here first, and far more cheaply.
+
+It changes nothing about §2a either way: a compiled watcher is another file in the folder
+being copied.
+
+### Lifecycle, if a watcher exists
+
+Not difficulties, but they have to be answered rather than discovered:
+
+- `/uninstall` must stop it. Deleting the folder underneath a running watcher is the
+  worst version of this.
+- `/update` replaces the app while a watcher from the previous version is still running
+  and still pointing at the old paths. It should be stopped and re-armed, or refuse.
+- A watcher whose app has gone should exit rather than linger.
+- Whatever `/background` starts has to survive the app exiting, which means detaching from
+  the process group Onion launched us in — and whether that survives Onion regaining
+  control is itself worth checking early, because the whole idea rests on it.
 
 ---
 
@@ -127,7 +170,8 @@ is worth having at a prompt you reached from the menu, too.
 **Full-screen and opaque. No transparency, but the actual behaviour.**
 
 A watcher on `/dev/input/event0` for a button chord, `SIGSTOP` on the emulator, the app in
-the foreground, `SIGCONT` when it exits.
+the foreground, `SIGCONT` when it exits. Armed by `/background` rather than by anything
+installed — see §2a, which is where most of the design of this stage actually lives.
 
 Onion's own in-game menu already suspends a running game to draw over it, so the pattern
 is proven on this hardware — the question is only how much of it can be borrowed rather
@@ -196,11 +240,14 @@ together.
    and take the screen, most of stage B disappears and some of C gets easier. If not, both
    get substantially larger.
 
-   This question decides two separate things, which is why it is worth more than the rest
-   together: how large stage B is, **and whether stage B keeps the install story in §2a**.
-   A version of B that requires patching Onion's own files is one I would argue against
-   shipping regardless of how well it worked. *Read Onion's `keymon`, its in-game menu, and
-   whatever `/mnt/SDCARD/.tmp_update` does at startup.*
+   This decides how large stage B is. It no longer decides the install story — `/background`
+   in §2a settles that on its own, by having the user arm the watcher rather than
+   installing one. *Read Onion's `keymon`, its in-game menu, and whatever
+   `/mnt/SDCARD/.tmp_update` does at startup.*
+
+   Worth answering anyway even though it is no longer blocking: if Onion already watches
+   for a chord we can borrow, there is no watcher to write, and the input-cost problem
+   below disappears with it.
 2. **Where does Onion record the game currently running?** Needed for the game-aware
    prefill regardless of which stage delivers it.
 3. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage B may
@@ -214,6 +261,13 @@ together.
 6. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
    its allocation. Shell plus `curl` plus `jq` is small, but it has not been measured
    against a running game.
+7. **Does a process started by the app survive the app exiting?** `/background` rests
+   entirely on this. Onion regains control when an app exits and may take the process group
+   with it; `setsid` is the usual answer, but whether it is enough here has not been tested.
+   Cheap to answer and worth answering before anything else in stage B is designed.
+8. **What a shell input watcher costs during a game.** Every button press wakes it. If that
+   is measurable against the emulator, the watcher wants to be the small native helper
+   described in §2a rather than a loop in `sh`.
 
 ---
 

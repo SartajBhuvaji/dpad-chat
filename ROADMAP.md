@@ -391,9 +391,15 @@ so the reasons behind the staging survive.
    `.tmp_update/cmd_to_run.sh` was not there and is dropped; `Roms/recentlist.json` is real,
    is newline-delimited JSON, and carries a `label` — and also carries this app, which is
    why §4 keys on `rompath`. **Stage B is no longer waiting on anything.**
-2. **What state does switching back leave the game in?** Not blocking — Onion owns this —
-   but it decides how the feature should be described, and whether it is worth warning
-   anyone about before they lose progress.
+2. ~~What state does switching back leave the game in?~~ **Answered: resumable.** Menu out
+   of a game, come back, and it is still there. Nothing is lost, so no warning is needed and
+   the round trip in §1 is real rather than aspirational.
+
+   One thread left, and it now matters to **stage B** rather than only to C and D: whether
+   the game stays resident while we run, or is relaunched from a state on the way back. If
+   it stays resident then our memory sits alongside a suspended emulator in 128 MB — see
+   question 9, which was filed under stages that reach into a running game and turns out to
+   apply here too.
 3. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
    testing: press X at the prompt and see whether any byte arrives.
 4. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
@@ -410,9 +416,11 @@ so the reasons behind the staging survive.
 8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
    and that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
    but the format has not been looked at.
-9. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
-   its allocation. Shell plus `curl` plus `jq` is small, but it has not been measured
-   against a running game.
+9. **RAM headroom with a game suspended.** 128 MB total, and a suspended emulator may keep
+   its allocation. Shell plus `curl` plus `jq` is small, and Onion ships this switching so
+   people already do it — but if memory ran out while we held a reply, what the kernel
+   reclaimed could be somebody's game, which is the one thing §2a says must not happen.
+   Worth measuring once stage B is on the device, rather than assumed either way.
 
 ---
 

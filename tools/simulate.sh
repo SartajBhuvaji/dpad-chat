@@ -7,13 +7,13 @@
 #   tools/simulate.sh              interactive
 #   echo '/about' | tools/simulate.sh   scripted
 #
-# Set DPAD_COLS to try a different width; see PLAN.md section 11, item 2.
+# Set DPAD_COLS to try a different width. 53 is what the device reports.
 
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 
-COLUMNS="${DPAD_COLS:-40}"
+COLUMNS="${DPAD_COLS:-53}"
 export COLUMNS
 
 DPAD_DATA_DIR="${DPAD_DATA_DIR:-${TMPDIR:-/tmp}/dpad-chat-sim}"

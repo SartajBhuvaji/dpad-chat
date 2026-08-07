@@ -69,7 +69,11 @@ cmd_help() {
 
 cmd_about() {
     ui_info "version  $DPADCHAT_VERSION"
+    # Both halves of the grid. The width alone left it ambiguous whether st
+    # keeps a border - 53 columns rules one out across, but says nothing about
+    # down, and the row count is what the status bars are pinned by.
     ui_info "width    ${UI_COLS} cols"
+    ui_info "height   ${SCREEN_ROWS:-?} rows"
     if is_device; then
         ui_info 'host     Miyoo (Onion OS)'
     else

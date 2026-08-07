@@ -3,8 +3,16 @@
 `PLAN.md` records what was built and why. This records where it is going, and — more
 usefully — what has to be found out before parts of it can be costed at all.
 
-Nothing here is committed to. The staging exists so that the expensive work is done last,
-after the cheap work has proved it is the right work.
+The staging exists so that the expensive work is done last, after the cheap work has
+proved it is the right work.
+
+**Chosen: stages A and B.** Onion can already switch from a running game to an App, so the
+hard part of getting there mid-game is somebody else's code and already written. A builds
+the suggestion mechanism, B makes the suggestion be about the game. Neither needs a
+background process, a compiler, or a change to how the app is installed.
+
+Stages C and D stay written down and unstarted. Whether either is worth building is a
+question about how B feels in the hand, and that cannot be answered before B exists.
 
 ---
 
@@ -95,24 +103,59 @@ opener is two hundred presses. Accepting it with one is the whole feature.
 
 **Still no daemon, no suspend, no new process. Possibly the whole feature.**
 
-Onion can switch away from a running game to an app. If that is so, the entire mechanism
-for *getting to the app mid-game* already exists and is somebody else's code to maintain.
-What is left for us is small:
+Onion switches away from a running game to an app on its own. The entire mechanism for
+*getting to the app mid-game* therefore already exists and is somebody else's code to
+maintain. What is left for us is small:
 
 > On startup, work out whether a game is running or was just left, and if so make the
 > stage A suggestion be about it.
 
-That is a config read and a string, not a daemon. It needs answers to research questions 1
-and 2 and nothing else.
+That is a file read and a string, not a daemon.
 
-**This is the cheapest possible version of the idea, and it may be the only one worth
-building.** It should be attempted before stage C is designed at all, because if switching
-is pleasant enough in practice, a custom chord is a convenience rather than a feature — and
-convenience does not justify a background process.
+### Where the game name comes from
 
-What it does not give you is the *speed* of the idea in §1: a chord is one gesture, and
-going out to a menu and picking an app is several. Whether that gap matters is a question
-about how it feels, and the only way to answer it is to build B and use it.
+Two candidates, neither yet confirmed on hardware. They answer slightly different
+questions, which is why both are worth having.
+
+**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh`** holds the command Onion would use to resume
+the current game — it is what makes auto-resume work, and Onion's own FAQ tells people to
+delete it to switch that off. That makes it the better signal: it exists *because a game is
+loaded right now*, which is exactly the condition the prefill should key on. The ROM path
+is in the command, so the name comes from the basename with its extension stripped.
+
+**`/mnt/SDCARD/Roms/recentlist.json`** is the recently-played list behind Onion's Recents,
+carrying a `label` per entry along with `rompath` and `type`. Its `label` is the name Onion
+itself displays, which is nicer than a filename — but it says what was played recently, not
+what is loaded now.
+
+So: prefer `cmd_to_run.sh` to decide **whether** to suggest anything, and prefer
+`recentlist.json` for **what to call** the game, falling back to the ROM basename when no
+matching entry is there. If neither file exists, there is no game and the static
+suggestions from stage A apply — which is the same code path, not a special case.
+
+### Deliberately conservative
+
+If the game cannot be identified, the app behaves exactly as it does today. A wrong game
+name in the prompt is worse than none: it would be quietly fed to the model as fact, and
+the user would have to notice and correct it. Silence is the safe failure here.
+
+### How A and B get delivered
+
+Two changes, in this order, because the first needs nothing from anybody and the second is
+small once it exists.
+
+**1. The suggestion mechanism, with static text.** Ghost prefill, Right to accept, a
+`suggest=` setting in `settings.cfg`. Testable entirely through `tests/keys.py` — the pty
+harness already drives the editor a keystroke at a time, and a suggestion that is drawn but
+not in the buffer is exactly the kind of thing that harness was built to catch. Nothing
+here waits on hardware.
+
+**2. The game as the source.** Read the two files in §4, derive a name, feed it to the
+mechanism from step 1. Small, and gated only on research question 1 — which is answerable
+from the SD card over SSH without touching the device UI.
+
+Splitting it this way means step 1 ships and is useful even if the files in §4 turn out not
+to say what they are documented to say.
 
 ---
 
@@ -244,31 +287,37 @@ Smaller work that stands on its own, roughly in the order I would take it.
 
 ## 9. To find out
 
-Ordered so that the cheap answers that could cancel expensive work come first.
+Questions 1 to 3 are stage B. The rest belong to stages C and D and are not being worked
+on; they are kept so that the reasons behind the staging survive.
 
-1. **Can Onion switch from a running game to an App, and what does it leave the game in?**
-   This is the whole of stage B, and if it is a good experience it may cancel stage C.
-   Answerable in a minute on hardware: start a game, switch to D-Pad Chat, see what
-   happens — and then see whether the game is still there afterwards.
-2. **Where does Onion record the game currently running, or last run?** Needed for the
-   game-aware prefill regardless of which stage delivers it.
-3. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
+1. **Do `.tmp_update/cmd_to_run.sh` and `Roms/recentlist.json` exist and hold what §4 says
+   they hold?** Both come from documentation and third-party tooling, not from having
+   looked at a card. Needed before stage B can read either. *Answerable from the SD card
+   over SSH without touching the device UI, and it is the only thing stage B is waiting
+   on.*
+2. **Is `cmd_to_run.sh` removed when a game is exited, or does it linger?** Decides whether
+   it means "a game is loaded" or only "a game was loaded at some point", and therefore
+   whether the prefill can appear when it should not.
+3. **What state does switching back leave the game in?** Not blocking — Onion owns this —
+   but it decides how the feature should be described, and whether it is worth warning
+   anyone about before they lose progress.
+4. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
    testing: press X at the prompt and see whether any byte arrives.
-4. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
+5. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
    device directly means `st`'s mapping does not constrain us, but the codes have to be
    known.
-5. **Does a process started by the app survive the app exiting?** `/background` rests
+6. **Does a process started by the app survive the app exiting?** `/background` rests
    entirely on this. Onion regains control when an app exits and may take the process group
    with it; `setsid` is the usual answer, but whether it is enough here is untested.
-6. **What a shell input watcher costs during a game.** Every button press wakes it. If that
+7. **What a shell input watcher costs during a game.** Every button press wakes it. If that
    is measurable against the emulator, the watcher wants to be the small native helper in
    §5 rather than a loop in `sh`.
-7. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
+8. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
    not need a native binary at all.
-8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
+9. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
    and that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
    but the format has not been looked at.
-9. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
+10. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
    its allocation. Shell plus `curl` plus `jq` is small, but it has not been measured
    against a running game.
 

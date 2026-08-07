@@ -78,16 +78,27 @@ input_init() {
 
 # Erasing across a wrapped row needs the terminal's width: without it there is
 # no way to tell that a wrap happened at all, let alone which column to move
-# back to. Prefers ui.sh's already-detected value, which honours the COLUMNS
-# override the harness uses to pin the device width.
+# back to.
+#
+# The same three sources ui.sh uses, in the same order, because the editor and
+# the renderer disagreeing about how wide a row is would put the wrap in two
+# different places. ui.sh's already-detected value comes first so that in the
+# app there is only ever one answer; the rest is for this file used alone.
+#
+# COLUMNS before the terminal, since it is how the harness and
+# tools/simulate.sh pin a device-shaped width onto a terminal that is not one.
 #
 # Reports 0 when the width cannot be established. Every caller treats that as
 # "stay on one row" rather than guessing, because a wrong width would move the
 # cursor to the wrong column and corrupt what is on screen.
 _input_detect_cols() {
     _in_c="${UI_COLS:-}"
+    [ -n "$_in_c" ] || _in_c="${COLUMNS:-}"
 
     if [ -z "$_in_c" ] && command -v stty >/dev/null 2>&1; then
+        # Not simply the terminal's own answer under busybox: its stty falls
+        # back to $COLUMNS when the window size is unset, which is why that is
+        # read above rather than left to surface here as a different number.
         _in_c=$(stty size 2>/dev/null | cut -d' ' -f2)
     fi
 
@@ -287,12 +298,17 @@ input_readline() {
     INPUT_LINE=''
     INPUT_START_COL=0
 
+    # Defaulted once, into a variable: the argument is optional, and under
+    # `set -u` a bare $1 anywhere below would abort the session rather than
+    # fall back to zero.
+    _in_p="${1:-0}"
+
     # A prompt long enough to wrap leaves the cursor part-way along its last
     # row, and that row is the one the line starts on.
     if [ "$INPUT_COLS" -ge "$INPUT_MIN_COLS" ]; then
-        case "${1:-0}" in
+        case "$_in_p" in
             '' | *[!0-9]*) ;;
-            *) INPUT_START_COL=$(($1 % INPUT_COLS)) ;;
+            *) INPUT_START_COL=$((_in_p % INPUT_COLS)) ;;
         esac
     fi
 

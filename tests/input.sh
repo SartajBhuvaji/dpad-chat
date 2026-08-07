@@ -94,6 +94,25 @@ assert_eq 'a backslash is not an escape' "$(printf 'a\\b\n' | piped)" '0:a\b'
 assert_eq 'escapes are literal when piped' \
     "$(printf 'a\033[Hb\n' | piped)" "0:a${ESC}[Hb"
 
+# The prompt width is an optional argument, and the arithmetic using it only
+# runs once a width is known. A bare $1 in there is fatal under `set -u`, which
+# every script here and the app itself run with - but with no width the block
+# is skipped and nothing springs the trap, so one is pinned to make sure it is
+# reached with no argument to find.
+assert_eq 'a bare call is safe once a width is known' \
+    "$(printf 'hi\n' | (
+        # Local to this subshell on purpose: the width is for this one case and
+        # must not follow the rest of the file.
+        # shellcheck disable=SC2030
+        COLUMNS=40
+        export COLUMNS
+        # shellcheck source=../app/lib/input.sh
+        . "$REPO_ROOT/app/lib/input.sh"
+        input_init
+        # shellcheck disable=SC2119
+        input_readline && printf '0:%s' "$INPUT_LINE"
+    ))" '0:hi'
+
 assert_eq 'no terminal means no raw mode' \
     "$(printf 'x\n' | (
         # shellcheck source=../app/lib/input.sh
@@ -114,6 +133,16 @@ cat >"$DRIVER" <<'DRIVER_EOF'
 set -eu
 # shellcheck source=/dev/null
 . "$REPO_ROOT/app/lib/input.sh"
+
+# The harness pins COLUMNS to the device width for the whole suite, so a case
+# wanting a different one - or none at all - has to say so here.
+if [ -n "${DRIVER_COLS:-}" ]; then
+    COLUMNS="$DRIVER_COLS"
+    export COLUMNS
+else
+    unset COLUMNS
+fi
+
 input_init
 
 before=$(stty -g)
@@ -140,7 +169,8 @@ chmod +x "$DRIVER"
 
 DRIVER_OUT="$WORK_DIR/driver.out"
 DRIVER_PROMPT_COLS=0
-export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS
+DRIVER_COLS=''
+export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS
 
 # Types the given keystrokes at a pty and leaves the outcome in KEYS_RC,
 # KEYS_LINE and KEYS_ECHO. KEYS_ECHO is everything the editor drew, with none
@@ -148,9 +178,24 @@ export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS
 #
 # $2 is the terminal width, defaulting to something wide enough that nothing
 # wraps. The wrap cases pass a small one so a boundary is a few keys away.
+#
+# $3 says where the editor should find that width: `env` puts it in COLUMNS,
+# the way the harness and tools/simulate.sh do, and `tty` leaves the terminal
+# as the only thing that knows. Both have to work, and which one answers has to
+# be the same everywhere - busybox's stty consults COLUMNS itself when the
+# window size is unset, so a case that left both in play would read 40 under
+# the harness and 10 here.
 keys() {
+    _k_cols="${2:-80}"
+
+    case "${3:-env}" in
+        env) DRIVER_COLS="$_k_cols" ;;
+        *) DRIVER_COLS='' ;;
+    esac
+    export DRIVER_COLS
+
     : >"$DRIVER_OUT"
-    KEYS_ECHO=$("$REPO_ROOT/tests/keys.py" --cols "${2:-80}" --input "$1" \
+    KEYS_ECHO=$("$REPO_ROOT/tests/keys.py" --cols "$_k_cols" --input "$1" \
         -- "$DRIVER" 2>/dev/null) || :
     KEYS_RC=$(sed -n 's/^rc=//p' "$DRIVER_OUT")
     KEYS_LINE=$(sed -n 's/^line=//p' "$DRIVER_OUT")
@@ -265,10 +310,14 @@ else
 
     printf '\nErasing across a wrap\n'
 
-    # Ten columns, so a boundary is ten keys away instead of eighty. The width
-    # is read from the terminal, the same way it is on the device.
+    # Ten columns, so a boundary is ten keys away instead of eighty.
     keys 'abc\r' 10
-    assert_eq 'the terminal width is picked up' "$KEYS_COLS" '10'
+    assert_eq 'the width is taken from COLUMNS' "$KEYS_COLS" '10'
+
+    # And from the terminal itself when nothing has pinned one, which is how
+    # the app runs on the device.
+    keys 'abc\r' 10 tty
+    assert_eq 'or from the terminal when COLUMNS says nothing' "$KEYS_COLS" '10'
 
     # The case from the report. Ten characters exactly fill the row, so the
     # cursor is at the start of the next one and the character to remove is on
@@ -324,10 +373,10 @@ else
     assert_not_contains 'and without the prompt they do not reach it' \
         "$KEYS_ECHO" "$(printf '\033[1A')"
 
-    # A terminal that does not report a size, which is what a bare pty is. The
-    # width is unknown, so wraps cannot be located and the editor stays on one
-    # row rather than moving the cursor somewhere it guessed.
-    keys 'abc\177\r' 0
+    # A terminal that does not report a size, with nothing pinning one either.
+    # The width is unknown, so wraps cannot be located and the editor stays on
+    # one row rather than moving the cursor somewhere it guessed.
+    keys 'abc\177\r' 0 tty
     assert_eq 'an unknown width is reported as zero' "$KEYS_COLS" '0'
     assert_eq 'and the line is still edited' "$KEYS_LINE" 'ab'
     assert_contains 'by rubbing the character out in place' \

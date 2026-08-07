@@ -144,7 +144,7 @@ else
 fi
 
 out=$(on_card '')
-assert_contains 'auto-resume is cleared' "$out" 'resume: cleared'
+assert_contains 'a stale auto-resume is cleared' "$out" 'resume: cleared'
 assert_contains 'and the card is flushed' "$out" 'sync: ok'
 assert_contains 'and it succeeds' "$out" ':0'
 
@@ -172,9 +172,9 @@ assert_not_contains 'nor powered off' "$(cat "$RAN")" 'poweroff'
 
 printf '\nAuto-resume\n'
 
-# The difference between a power cycle and a fresh start. Onion replays what
-# was running from this file, so leaving it is how the device boots back into
-# the game the restart was meant to get rid of.
+# Clearing it is the default because a leftover one is what replays a ROM that
+# black-screens. --keep-resume is for the other side of that: reproducing the
+# boot loop rather than escaping it.
 out=$(on_card '--keep-resume')
 assert_contains 'it can be left alone' "$out" 'resume: left alone'
 assert_contains 'and that still succeeds' "$out" ':0'
@@ -185,14 +185,14 @@ else
     fail 'and the file survives'
 fi
 
-# Nothing was playing, which is the ordinary case for a device sitting at the
-# menu. Not an error, and worth saying rather than reporting a clear that did
-# not happen.
+# The ordinary case, and by some distance: the file appears to be consumed at
+# boot, so a device that is up normally has none. Not an error, and worth
+# wording as such rather than as a clear that did not happen.
 rm -rf "$CARD" "$RAN"
 mkdir -p "$CARD/.tmp_update"
 : >"$RAN"
 out=$(run_generated '')
-assert_contains 'an absent file is not an error' "$out" 'resume: was not set'
+assert_contains 'an absent file is the ordinary case' "$out" 'resume: nothing to clear'
 assert_contains 'and does not stop the restart' "$out" ':0'
 
 # A read-only card still restarts. It just comes back where it was, which is

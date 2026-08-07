@@ -145,14 +145,18 @@ Menu pressed to come out of it, nothing else done in between.
 from the design rather than guarded around: nothing should depend on a file that was
 absent at the one moment it was supposed to be there.
 
-> **Since corrected.** It is the auto-resume file, and it is real — Onion's own FAQ
-> documents deleting it as the way out of a ROM that black-screens on every boot. The
-> reading that fits both facts is that Onion **writes it as it shuts down**, not while a
-> game runs, so it was genuinely absent when the card was read and genuinely present at
-> boot. That does not bring it back into stage B: a file that only exists while the device
-> is off cannot say what is running while it is on. It does matter elsewhere, and
-> `tools/reboot.sh` clears it — that is the difference between a power cycle and a device
-> that comes up at the Apps menu instead of back in the game.
+> **Since corrected, twice.** It is the auto-resume file and it is real — Onion's FAQ
+> documents deleting it as the way out of a ROM that black-screens on every boot. A second
+> reading of the card, taken just after a boot, found it **absent there too**.
+>
+> What fits all of it — absent mid-game, absent after boot, and Onion telling people to
+> delete it *with the card in a PC* rather than over SSH — is that it is written as the
+> device shuts down and consumed at boot when it is replayed. **It exists only while the
+> device is off.**
+>
+> That settles stage B either way: a file that is never present while the device is
+> running cannot report what is running. The first correction reached the same conclusion
+> for a reason that was half right, which is worth leaving visible.
 
 **`/mnt/SDCARD/Roms/recentlist.json` is real, and is better than expected.** It is
 newline-delimited JSON — one object per line, no enclosing array — which `jq` reads

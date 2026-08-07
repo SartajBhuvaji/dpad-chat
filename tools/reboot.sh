@@ -2,13 +2,33 @@
 # Restart the device over SSH, leaving nothing running.
 #
 # Holding POWER is already a safe shutdown, and Onion auto-saves the game before
-# it goes down. What it does not give you is a *clean* boot: Onion records what
-# was running in .tmp_update/cmd_to_run.sh, and the next boot goes straight back
-# into it. Clearing that file is Onion's own documented escape from a bad ROM
-# that black-screens on every boot, and it is the difference between "power
-# cycle" and "start fresh".
+# it goes down. What it does not reliably give you is a *clean* boot: Onion
+# records what was running in .tmp_update/cmd_to_run.sh and replays it, which is
+# why a power cycle mid-game comes back into the game.
 #
-# So this is three things in order: clear auto-resume, flush the card, restart.
+# What is known about that file, and what is not:
+#
+#   - It was absent while a game was running, and absent again just after a
+#     boot. Both were measured on a device, not read somewhere.
+#   - Onion's FAQ has you delete it to escape a ROM that black-screens on every
+#     boot - and has you do it with the card in a PC, not over SSH.
+#
+# The reading that fits all of that is that it is written as the device shuts
+# down and consumed at boot when it is replayed, so it exists only while the
+# device is off. Which means the clear below is not what makes a restart come up
+# clean: by the time this runs there is normally nothing there to clear. It
+# catches a stale one left by an unclean shutdown, which is exactly the
+# boot-loop case, and that is worth doing on its own.
+#
+# Whether a restart from here lets Onion write a fresh one on the way down is
+# not established. busybox reboot signals init, init signals everything else,
+# and whether MainUI does its usual bookkeeping on the way out is not something
+# this script can see. It is one experiment away - start a game, run this, see
+# where it comes back - and the answer changes nothing about what to run, only
+# what to claim.
+#
+# So this is three things in order: clear any stale auto-resume, flush the card,
+# restart.
 #
 # It costs whatever the running emulator has not written. That is the point -
 # the app's own rule is that nothing it does may cost the user their game, and
@@ -42,7 +62,7 @@ Restart the device, with nothing left running.
 
 Options:
   --off             power off rather than restart
-  --keep-resume     leave auto-resume alone, so it boots back into the game
+  --keep-resume     leave a stale auto-resume file alone rather than clearing it
   --yes             do not ask
   --print-remote    print what would run on the device, and stop
 
@@ -104,15 +124,18 @@ if ! command -v "$ACTION" >/dev/null 2>&1; then
     exit 3
 fi
 
-# Onion records what was running here and replays it on the next boot. Removing
-# it is what turns a power cycle into a fresh start, and it is Onion's own
-# documented way out of a ROM that black-screens every time it resumes.
+# Onion records what was running here and replays it on the next boot. On a
+# device that shut down cleanly this is normally absent - it appears to be
+# consumed when it is replayed - so "was not set" is the ordinary answer and
+# not a sign anything went wrong. What this catches is one left behind, which
+# is Onion's own documented way out of a ROM that black-screens every time it
+# resumes.
 resume="$CARD/.tmp_update/cmd_to_run.sh"
 
 if [ "$KEEP_RESUME" -eq 1 ]; then
-    echo 'resume: left alone, this will boot back into the game'
+    echo 'resume: left alone'
 elif [ ! -f "$resume" ]; then
-    echo 'resume: was not set'
+    echo 'resume: nothing to clear'
 elif rm -f "$resume"; then
     echo 'resume: cleared'
 else
@@ -139,10 +162,9 @@ confirm() {
     printf 'Any unsaved game progress is lost.\n'
 
     if [ "$KEEP_RESUME" -eq 1 ]; then
-        printf 'Auto-resume is left alone, so it comes back where it was.\n'
+        printf 'Any stale auto-resume is left alone.\n'
     else
-        printf 'Auto-resume is cleared, so it comes up at the Apps menu\n'
-        printf 'rather than back in the game.\n'
+        printf 'Any stale auto-resume is cleared.\n'
     fi
 
     printf '\n%s? [y/N] ' \

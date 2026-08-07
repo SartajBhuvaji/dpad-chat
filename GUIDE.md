@@ -311,11 +311,11 @@ you need a restart before the change shows up. Holding **POWER** for a few secon
 safe shutdown, and pressing it again boots — that is the no-computer way to do it, and it
 is enough most of the time.
 
-It has one catch. Onion records what was running in `.tmp_update/cmd_to_run.sh` and the
-next boot goes straight back into it, so a power cycle in the middle of a game puts you
-back in the game rather than at the menu.
+It has one catch. Onion records what was running in `.tmp_update/cmd_to_run.sh` and
+replays it, so a power cycle in the middle of a game puts you back in the game rather than
+at the menu.
 
-From a checkout, when you want a genuinely fresh start:
+From a checkout:
 
 ```sh
 make reboot HOST=192.168.1.42
@@ -324,18 +324,17 @@ make reboot HOST=192.168.1.42
 ```
 This restarts onion@192.168.1.42 now.
 Any unsaved game progress is lost.
-Auto-resume is cleared, so it comes up at the Apps menu
-rather than back in the game.
+Any stale auto-resume is cleared.
 
 Restart? [y/N]
 ```
 
-It clears auto-resume, flushes the card, and restarts. Options:
+It clears any leftover auto-resume, flushes the card, and restarts. Options:
 
 | Option | Effect |
 | --- | --- |
 | `--off` | shut down instead of restarting |
-| `--keep-resume` | leave auto-resume alone, so it comes back where it was |
+| `--keep-resume` | leave a leftover auto-resume file alone |
 | `--yes` | do not ask |
 
 **It costs unsaved progress.** Holding POWER lets Onion write a save state first; this
@@ -346,6 +345,15 @@ yes.
 It refuses any host without a `/mnt/SDCARD/.tmp_update` on it, so a mistyped address that
 happens to answer SSH is not restarted. Use `tools/reboot.sh --print-remote` to see
 exactly what would run on the device.
+
+**On `cmd_to_run.sh`, and what is actually known.** It was absent on a running device with
+a game going, and absent again just after a boot — both measured, not read somewhere. What
+fits that, and Onion's own instruction to delete it *with the card in a PC*, is that it is
+written as the device shuts down and consumed at boot when it is replayed: it exists only
+while the device is off. So `resume: nothing to clear` is the ordinary answer here, and
+what the clear really catches is one left behind by an unclean shutdown — the boot-loop
+case. Whether restarting this way lets Onion write a fresh one on the way down has not
+been established.
 
 ---
 

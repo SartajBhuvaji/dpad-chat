@@ -40,6 +40,8 @@ again so you can read.
 - **Verified TLS, no fallback** — ships its own CA bundle and refuses to send your key
   over a connection it could not verify.
 - **Updates itself** — `/update` checks GitHub, asks first, installs on the next launch.
+- **Removes itself** — `/uninstall` deletes the app and your key from the card, from the
+  device, with no computer involved.
 - **No new binaries** — calls the `curl`, `jq` and `ntpdate` Onion already has.
 
 ## Requirements
@@ -52,7 +54,7 @@ A **Miyoo Mini Plus** running **Onion OS 4.x**, WiFi configured, and an
 Download the zip from [Releases][releases] and unpack it onto the **root** of the SD card,
 so the app lands in `/mnt/SDCARD/App/DPadChat/`. Then open **Apps → D-Pad Chat**.
 
-Already installed? Type `/update`.
+Already installed? Type `/update`. Done with it? Type `/uninstall`.
 
 **[Every other way to install →](GUIDE.md)**
 

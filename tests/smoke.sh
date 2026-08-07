@@ -65,6 +65,7 @@ assert_contains '/about reports a development host' "$out" 'development'
 
 out=$(printf '/help\n/quit\n' | run_app)
 assert_contains '/help lists /quit' "$out" '/quit'
+assert_contains '/help lists /uninstall' "$out" '/uninstall'
 assert_contains '/help explains the keyboard toggle' "$out" 'X toggles the keyboard'
 
 out=$(printf '/?\n/quit\n' | run_app)

@@ -40,6 +40,7 @@ app/                          ->  /mnt/SDCARD/App/DPadChat/
 ├── launch.sh                     entry point: applies a staged update, exec st -e chat.sh
 ├── chat.sh                       main REPL
 ├── apply-update.sh               copies a staged tree over the app (§9, /update)
+├── uninstall.sh                  deletes the app from the card (§9, /uninstall)
 ├── lib/
 │   ├── api.sh                    payload build + curl call + response parse
 │   ├── ui.sh                     word wrap, banner, spinner, colors
@@ -397,6 +398,37 @@ The `ready` marker is consumed *before* the copy starts. A copy that fails halfw
 a broken install that still boots into the old launcher; a marker left in place would
 leave the launcher retrying a failing copy forever, and there is no shell on the device to
 break that loop with.
+
+### Why `/uninstall` is a command and not a menu entry
+
+Removing the app meant pulling the card and finding a computer, which is a strange amount
+of ceremony for a folder — and it leaves an API key in plain text on the card for as long
+as the user does not get around to it. The obvious place for the button is Onion's Apps
+menu, beside the tile. That is not available: the menu is MainUI's, an app cannot add an
+entry to the list that launches it, and patching MainUI to add one would make this app
+responsible for a piece of the operating system it does not own.
+
+So it goes where `/update` already is, and takes the same shape for the same reason. The
+delete cannot run from the directory being deleted:
+
+```
+chat.sh      /uninstall   warn, ask twice, copy uninstall.sh to a tmpfs work dir
+                          (nothing is deleted, and every failure ends here)
+             exec         <- so no part of the app is executing from the card
+uninstall.sh              rm -rf the app directory, report, hold the screen
+```
+
+`uninstall.sh` wraps its work in a function that is called on the last line, so the
+interpreter has parsed the whole file before the first delete — including the delete of
+its own work directory. Nothing is read from disk after that point.
+
+Its guard is the marker set `config.json launch.sh chat.sh lib/common.sh`, plus a minimum
+path depth of three. A path that arrives truncated or empty fails both, and `/mnt/SDCARD`
+could never satisfy either. The tests assert on directories that are gone and siblings
+that are not, because that is the only evidence that means anything about an `rm -rf`.
+
+Off the device the command refuses outright. A checkout is not an install, and a chat
+prompt on a machine with a keyboard should not be able to reach `rm -rf` at all.
 
 ---
 

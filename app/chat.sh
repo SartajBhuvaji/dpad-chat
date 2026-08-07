@@ -32,6 +32,8 @@ readonly APP_DIR
 . "$APP_DIR/lib/api.sh"
 # shellcheck source=lib/update.sh
 . "$APP_DIR/lib/update.sh"
+# shellcheck source=lib/uninstall.sh
+. "$APP_DIR/lib/uninstall.sh"
 
 DATA_DIR="${DPAD_DATA_DIR:-$APP_DIR/data}"
 API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
@@ -40,12 +42,15 @@ API_CACERT="${DPAD_CACERT:-$APP_DIR/res/cacert.pem}"
 # Commands
 # -----------------------------------------------------------------------------
 
+# The labels are padded to the longest command rather than to the shortest that
+# fits, so the descriptions line up in a single column at 40 cols.
 cmd_help() {
-    ui_info '/help   this list'
-    ui_info '/clear  start a new chat  (/c)'
-    ui_info '/about  version and settings'
-    ui_info '/update check for a new version'
-    ui_info '/quit   exit'
+    ui_info '/help       this list'
+    ui_info '/clear      start a new chat  (/c)'
+    ui_info '/about      version and settings'
+    ui_info '/update     check for a new version'
+    ui_info '/uninstall  remove from the device'
+    ui_info '/quit       exit'
     printf '\n'
     ui_info 'Chats are kept when you close the app.'
     printf '\n'
@@ -180,6 +185,76 @@ cmd_update() {
     ui_info 'Quit and reopen D-Pad Chat to finish.'
 }
 
+# Removing the app from the device itself, because the alternative is pulling
+# the card and finding a computer. Onion's Apps menu is MainUI's, not ours, so
+# there is nowhere else to put this: an app cannot add an entry to the menu that
+# lists it.
+#
+# The delete happens in uninstall.sh, from a copy outside the app directory. The
+# staging failure paths all end with the install untouched, which is why the
+# copy is made before anything is said about deleting.
+cmd_uninstall() {
+    # A checkout is not an install. Deleting one from inside the app it is
+    # running would take the repository's app/ directory with it, and on a dev
+    # machine `rm -rf` is never the answer to a question typed at a prompt.
+    if ! is_device; then
+        ui_info 'Uninstall only runs on the device.'
+        ui_info "This copy is a checkout at $APP_DIR"
+        return 0
+    fi
+
+    printf '\n'
+    ui_warn 'Uninstalling deletes this folder:'
+    ui_info "  $APP_DIR"
+    printf '\n'
+    ui_info 'Your API key, this chat and the log go'
+    ui_info 'with it. Nothing is kept, and there is'
+    ui_info 'no undo.'
+
+    # Only reachable when DPAD_DATA_DIR points somewhere else, which nothing on
+    # the device does. Saying so is still cheaper than a user discovering their
+    # key is still on the card after being told it was deleted.
+    case "$DATA_DIR/" in
+        "$APP_DIR"/*) ;;
+        *)
+            printf '\n'
+            ui_warn 'Kept, because it is outside the app:'
+            ui_warn "  $DATA_DIR"
+            ;;
+    esac
+
+    printf '\n'
+    if ! chat_confirm 'Uninstall D-Pad Chat?'; then
+        ui_info 'Left as it is.'
+        return 0
+    fi
+
+    # Asked twice on purpose. /update can be undone by updating again; this
+    # cannot be undone at all, and the on-screen keyboard makes a stray 'y'
+    # easier to press than to mean.
+    if ! chat_confirm 'Last chance. Delete it now?'; then
+        ui_info 'Left as it is.'
+        return 0
+    fi
+
+    if ! uninstall_stage; then
+        ui_error "$UNINSTALL_ERROR"
+        ui_info 'Nothing was changed.'
+        return 0
+    fi
+
+    log_info 'uninstalling; handing over to the remover'
+
+    # Normally the EXIT trap's job, and `exec` never reaches it. The scroll
+    # region is global terminal state: left set, it hands Onion a terminal that
+    # scrolls inside two rows that are no longer there. The trap itself is left
+    # armed, so an exec that fails still ends the session tidily.
+    screen_teardown
+
+    printf 'Removing D-Pad Chat...\n'
+    uninstall_exec
+}
+
 # Reads the answer from the same stdin the REPL uses, so the on-screen keyboard
 # works here exactly as it does at the prompt. Anything other than yes is no,
 # including EOF: a closed pipe must not be read as consent to overwrite the app.
@@ -248,6 +323,12 @@ dispatch_command() {
             ;;
         /update | /upgrade)
             cmd_update
+            ;;
+        # No one- or two-letter form, unlike every other command here. Typing
+        # the word out on a d-pad keyboard is the first of the three deliberate
+        # acts this needs, and the two confirmations are the others.
+        /uninstall | /remove)
+            cmd_uninstall
             ;;
         /quit | /exit | /q)
             RUNNING=0
@@ -409,6 +490,7 @@ main() {
     history_init "$DATA_DIR" "$CFG_SYSTEM_PROMPT" ||
         die "Cannot write history to $DATA_DIR"
     update_init "$APP_DIR" "$DATA_DIR" "$API_CACERT"
+    uninstall_init "$APP_DIR"
 
     ui_init
     screen_init

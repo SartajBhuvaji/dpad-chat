@@ -46,6 +46,7 @@ test:
 	@tests/stream.sh
 	@tests/screen.sh
 	@tests/update.sh
+	@tests/uninstall.sh
 
 sim:
 	@tools/simulate.sh

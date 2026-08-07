@@ -35,7 +35,7 @@ import zipfile
 APP_NAME = "DPadChat"
 
 # Anything not listed here is copied with default permissions.
-EXECUTABLE = {"launch.sh", "chat.sh", "apply-update.sh"}
+EXECUTABLE = {"launch.sh", "chat.sh", "apply-update.sh", "uninstall.sh"}
 
 # Runtime state: the API key and the transcript. Shipping it would leak a
 # developer's key into a public release.
@@ -48,6 +48,10 @@ REQUIRED = [
     # Without this in the archive an update stages and then declines to install
     # itself, which is a confusing way to find out the packaging is wrong.
     "apply-update.sh",
+    # /uninstall stages this out of the app directory and execs it. Missing, the
+    # command reports that it cannot run rather than deleting anything, which is
+    # a safe failure but still a broken release.
+    "uninstall.sh",
     "res/cacert.pem",
     "res/icon.png",
 ]

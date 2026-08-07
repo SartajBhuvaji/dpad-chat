@@ -19,6 +19,7 @@ Everything you can type, press, or configure.
 | `/clear` | `/c`, `/cls`, `/new`, `/reset` | start a new chat |
 | `/about` | `/version` | version, width, model, TLS state, history size |
 | `/update` | `/upgrade` | check GitHub for a new release, and offer to install it |
+| `/uninstall` | `/remove` | delete the app, and everything it keeps, from the card |
 | `/quit` | `/exit`, `/q` | exit to the Apps menu |
 
 Anything else beginning with `/` is reported as unknown rather than sent to the model, so
@@ -35,8 +36,8 @@ Starts a new chat. **This is destructive and final.** The screen goes blank and 
 conversation is gone — from the screen and from the card. No copy is kept anywhere, and
 there is no undo.
 
-It is the only way to lose a chat. Installing, reinstalling and updating all leave the
-conversation alone.
+Short of `/uninstall`, which removes everything, it is the only way to lose a chat.
+Installing, reinstalling and updating all leave the conversation alone.
 
 An empty screen is the confirmation. The app deliberately does not report what it just
 discarded, because the first thing in a new chat should not be a note about the old one.
@@ -84,6 +85,40 @@ the swap happens on the next launch. Quit and reopen to finish.
 `/update` is manual — the app never contacts GitHub unless you ask. Full details, and why
 it installs at launch rather than immediately, are in
 [GUIDE.md](GUIDE.md#route-4--in-app-with-update).
+
+### `/uninstall`
+
+Removes the app from the device. **This is destructive and final**, and it takes the
+folder with it: the app, `settings.cfg` with your API key, the conversation, and the log.
+
+```
+Uninstalling deletes this folder:
+  /mnt/SDCARD/App/DPadChat
+
+Your API key, this chat and the log go
+with it. Nothing is kept, and there is
+no undo.
+
+Uninstall D-Pad Chat? [y/N]
+```
+
+It asks twice. Nothing is deleted before both answers, and the second is asked because
+`/update` can be undone by updating again while this cannot be undone at all. There is no
+short alias for the same reason: typing ten characters on a d-pad keyboard is the first
+of the three deliberate acts this needs.
+
+The delete itself runs from a copy of the uninstaller staged outside the app folder, so
+no part of the app is executing from the directory being removed — the same split, in
+reverse, that `/update` uses. If the copy cannot be made, nothing is deleted and the app
+carries on.
+
+Off the device — under `make sim`, or over SSH from a checkout — the command refuses and
+says so. A checkout is not an install, and `rm -rf` is not something a chat prompt should
+be able to reach on a machine with a keyboard.
+
+Onion reads the Apps menu at boot, so the tile can outlive the folder until the next
+restart. Deleting `App/DPadChat/` from a computer does exactly the same thing, and is
+what to fall back on if the card is write-protected.
 
 ### `/quit`
 
@@ -235,4 +270,5 @@ Everything is under `App/DPadChat/data/` on the card. Nothing is written outside
 The log is the right thing to attach to a bug report. It records what was asked of the
 API and what came back, and the key redaction is covered by tests.
 
-Deleting `App/DPadChat/` removes the app and all of this with it.
+Deleting `App/DPadChat/` removes the app and all of this with it, which is precisely
+what `/uninstall` does from the device.

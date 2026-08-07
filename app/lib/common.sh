@@ -8,8 +8,11 @@
 # shellcheck disable=SC2034
 DPADCHAT_VERSION='0.7.3'
 
-# Root of Onion's bundled binaries and shared libraries.
-ONION_SYSDIR='/mnt/SDCARD/.tmp_update'
+# Root of Onion's bundled binaries and shared libraries. Its presence is also
+# what tells the app it is on a device rather than a desktop, so the tests point
+# it at a directory of their own to exercise the on-device paths. Nothing on the
+# device sets DPAD_SYSDIR; there is no environment there to set it from.
+ONION_SYSDIR="${DPAD_SYSDIR:-/mnt/SDCARD/.tmp_update}"
 
 # Maximum log size before rotation, in bytes. SD cards are small and slow;
 # one rotation is enough to debug a failed session without unbounded growth.

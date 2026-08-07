@@ -76,7 +76,7 @@ the stages, and it took the constraint being written down to see it.
 | | Installs cleanly | Only reads Onion | Cannot harm a game |
 | --- | --- | --- | --- |
 | **A** — prefill | yes | touches nothing | yes |
-| **B** — game-aware | yes | two file reads | yes |
+| **B** — game-aware | yes | one file read | yes |
 | **C** — chord | via `/background` | yes | **no** — signals a live emulator |
 | **D** — overlay | binary in our folder | yes | **no** — writes the framebuffer |
 
@@ -135,24 +135,69 @@ That is a file read and a string, not a daemon.
 
 ### Where the game name comes from
 
-Two candidates, neither yet confirmed on hardware. They answer slightly different
-questions, which is why both are worth having.
+**Confirmed on hardware.** What follows is read off a real card, not from documentation.
 
-**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh`** holds the command Onion would use to resume
-the current game — it is what makes auto-resume work, and Onion's own FAQ tells people to
-delete it to switch that off. That makes it the better signal: it exists *because a game is
-loaded right now*, which is exactly the condition the prefill should key on. The ROM path
-is in the command, so the name comes from the basename with its extension stripped.
+**`/mnt/SDCARD/.tmp_update/cmd_to_run.sh` does not exist**, at least not once a game has
+been exited to the menu. The documentation describing it as the auto-resume command is
+either about a different Onion version or about a file that only exists at boot. It is
+dropped from the design: nothing should depend on a file that was not there when looked
+for.
 
-**`/mnt/SDCARD/Roms/recentlist.json`** is the recently-played list behind Onion's Recents,
-carrying a `label` per entry along with `rompath` and `type`. Its `label` is the name Onion
-itself displays, which is nicer than a filename — but it says what was played recently, not
-what is loaded now.
+**`/mnt/SDCARD/Roms/recentlist.json` is real, and is better than expected.** It is
+newline-delimited JSON — one object per line, no enclosing array — which `jq` reads
+natively with no flags:
 
-So: prefer `cmd_to_run.sh` to decide **whether** to suggest anything, and prefer
-`recentlist.json` for **what to call** the game, falling back to the ROM basename when no
-matching entry is there. If neither file exists, there is no game and the static
-suggestions from stage A apply — which is the same code path, not a special case.
+```json
+{"label":"Road Rash (USA, Europe)","rompath":"/mnt/SDCARD/Emu/MD/launch.sh:/mnt/SDCARD/Emu/MD/../../Roms/MD/Road Rash (USA, Europe).zip","imgpath":"...","launch":"...","type":5}
+{"label":"D-Pad Chat","launch":"/mnt/SDCARD/App/DPadChat/launch.sh","type":3}
+```
+
+`label` is exactly what is wanted: the name Onion itself displays, already human-readable,
+with no filename mangling to undo.
+
+### The entry at the top is us
+
+**Apps are in this list too, and launching D-Pad Chat pushes D-Pad Chat onto it.** By the
+time our code runs, the most recent entry is always ourselves — in the sample above, twice
+over. Reading "the first entry" would have produced *"I'm playing D-Pad Chat"*, and it
+would have done it every single time.
+
+Games carry `rompath` and `imgpath`; apps have only `launch`. **Presence of `rompath` is
+the discriminator**, and it is a better one than `type` — 5 against 3 in the sample, but
+those are numbers whose meaning we would be guessing at, and there is no reason to think
+they enumerate only those two things.
+
+```sh
+jq -r 'select(has("rompath")) | .label' recentlist.json 2>/dev/null | head -n 1
+```
+
+### Staleness is already handled by the interaction
+
+Without `cmd_to_run.sh` there is no way to tell *"a game is loaded right now"* from *"a
+game was played last week"*. The most recent game entry exists either way.
+
+That would matter a great deal if the name were injected into the prompt silently. It is
+not — stage A puts it on screen as ghost text that does nothing until **Right** is pressed.
+A stale suggestion therefore costs one dismissal, which is the same cost as any other
+suggestion the user did not want. **The interaction absorbs the uncertainty**, which is
+worth noticing: it means the feature does not need the signal the missing file would have
+provided.
+
+If it turns out to grate in practice, checking whether an emulator process is alive is a
+read-only refinement that can be added later. Not before there is evidence it is needed.
+
+### Two smaller judgements
+
+- **Region tags.** `label` is `Road Rash (USA, Europe)`, and the convention in ROM naming
+  is that anything trailing in parentheses is metadata rather than title. Stripping those
+  groups reads better in a sentence. It is a small risk against titles that legitimately
+  end in parentheses, so it is worth doing and worth being able to turn off.
+- **`rompath` is two paths joined by a colon** — the emulator's launch script and then the
+  ROM. Nothing needs it while `label` is there, which is the argument for not parsing it at
+  all.
+
+The sample above goes into the repository as a test fixture, so the parser is written
+against real bytes rather than invented ones.
 
 ### Deliberately conservative
 
@@ -321,37 +366,34 @@ Smaller work that stands on its own, roughly in the order I would take it.
 
 ## 9. To find out
 
-Questions 1 to 3 are stage B. The rest belong to stages C and D and are not being worked
-on; they are kept so that the reasons behind the staging survive.
+Question 1 was stage B's only blocker and is answered. Question 2 is worth knowing but
+blocks nothing. The rest belong to stages C and D, are not being worked on, and are kept
+so the reasons behind the staging survive.
 
-1. **Do `.tmp_update/cmd_to_run.sh` and `Roms/recentlist.json` exist and hold what §4 says
-   they hold?** Both come from documentation and third-party tooling, not from having
-   looked at a card. Needed before stage B can read either. *Answerable from the SD card
-   over SSH without touching the device UI, and it is the only thing stage B is waiting
-   on.*
-2. **Is `cmd_to_run.sh` removed when a game is exited, or does it linger?** Decides whether
-   it means "a game is loaded" or only "a game was loaded at some point", and therefore
-   whether the prefill can appear when it should not.
-3. **What state does switching back leave the game in?** Not blocking — Onion owns this —
+1. ~~Do the two files exist and hold what is claimed?~~ **Answered.**
+   `.tmp_update/cmd_to_run.sh` was not there and is dropped; `Roms/recentlist.json` is real,
+   is newline-delimited JSON, and carries a `label` — and also carries this app, which is
+   why §4 keys on `rompath`. **Stage B is no longer waiting on anything.**
+2. **What state does switching back leave the game in?** Not blocking — Onion owns this —
    but it decides how the feature should be described, and whether it is worth warning
    anyone about before they lose progress.
-4. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
+3. **Does X reach the app at all?** Decides whether stage A can bind it. One line of
    testing: press X at the prompt and see whether any byte arrives.
-5. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
+4. **What event codes does the Mini Plus report for `L2` and `R2`?** For §6. Reading the
    device directly means `st`'s mapping does not constrain us, but the codes have to be
    known.
-6. **Does a process started by the app survive the app exiting?** `/background` rests
+5. **Does a process started by the app survive the app exiting?** `/background` rests
    entirely on this. Onion regains control when an app exits and may take the process group
    with it; `setsid` is the usual answer, but whether it is enough here is untested.
-7. **What a shell input watcher costs during a game.** Every button press wakes it. If that
+6. **What a shell input watcher costs during a game.** Every button press wakes it. If that
    is measurable against the emulator, the watcher wants to be the small native helper in
    §5 rather than a loop in `sh`.
-8. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
+7. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
    not need a native binary at all.
-9. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
+8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
    and that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
    but the format has not been looked at.
-10. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
+9. **RAM headroom with an emulator suspended.** 128 MB total, and a stopped emulator keeps
    its allocation. Shell plus `curl` plus `jq` is small, but it has not been measured
    against a running game.
 

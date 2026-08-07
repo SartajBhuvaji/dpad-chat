@@ -273,7 +273,9 @@ cmd_uninstall() {
 chat_confirm() {
     printf '\n%s%s [y/N] %s' "$C_USER" "$1" "$C_RESET"
 
-    if ! input_readline; then
+    # The question and the ` [y/N] ` after it are what the answer is typed
+    # beside, so together they are this prompt's width.
+    if ! input_readline "$((${#1} + 7))"; then
         printf '\n'
         return 1
     fi
@@ -460,7 +462,7 @@ repl() {
         ui_prompt
 
         # A failed read means EOF: the pipe closed, or `st` exited via Select.
-        if ! input_readline; then
+        if ! input_readline "$UI_PROMPT_COLS"; then
             printf '\n'
             break
         fi

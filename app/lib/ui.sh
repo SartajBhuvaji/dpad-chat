@@ -111,6 +111,15 @@ ui_assistant() {
     printf '%s\n' "$C_RESET"
 }
 
+# Columns ui_prompt occupies. The colours around it are escapes and take no
+# space on screen, so this counts the caret and the space after it. The line
+# editor needs it to know which column a typed line starts in.
+#
+# Read by chat.sh rather than here; static analysis works one file at a time
+# and cannot see that use.
+# shellcheck disable=SC2034
+UI_PROMPT_COLS=2
+
 # Written without a trailing newline so the cursor sits after the caret while
 # the on-screen keyboard is open.
 ui_prompt() {

@@ -48,7 +48,7 @@ app/                          ->  /mnt/SDCARD/App/DPadChat/
 │   ├── update.sh                 release check, download, stage
 │   └── config.sh                 settings load/save, first-run key entry
 ├── res/
-│   ├── icon.png                  app icon (~200x200, transparent PNG)
+│   ├── icon.png                  app icon (74x74 RGBA, as Onion's own are)
 │   └── cacert.pem                CA bundle (see §7)
 └── data/                         created at runtime, git-ignored
     ├── settings.cfg              API key, model, max_tokens
@@ -687,8 +687,15 @@ The keyboard is validated on hardware; everything else is validated in the conta
 
 ## 11. Open questions to settle on-device
 
-1. Does `config.json` accept an icon path **relative to the app folder** (`res/icon.png`),
-   or must it point into `/mnt/SDCARD/Icons/` the way built-in apps do?
+1. ~~Does `config.json` accept an icon path **relative to the app folder**~~ **Answered:
+   yes.** `res/icon.png` resolves and the tile draws. Built-in apps point into
+   `/mnt/SDCARD/Icons/` instead, and that is not a requirement but a feature: Onion's
+   icon-pack switcher matches on the *basename* of the `icon` field and rewrites
+   `config.json` to point into the active pack. Ours is the generic `icon`, which matches
+   nothing in any pack, so we keep our own artwork under every theme — at the cost of
+   theme authors not being able to restyle the tile. Renaming it to something distinctive
+   would let them; it is not obviously worth the churn to `/update`, which replaces
+   `config.json` and would undo the switcher's rewrite.
 2. ~~Exact terminal column/row count `st` reports at 640×480.~~ **Answered: 53 columns**,
    measured with `/about` on hardware. The mockups in §4 are drawn at 40 and are that much
    narrower than the real thing; they are kept for layout rather than redrawn, since none

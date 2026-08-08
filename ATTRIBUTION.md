@@ -5,16 +5,15 @@ itself, and [LICENSE](LICENSE) for its own terms.
 
 ## Launcher icon
 
-The sparkle in the app icon is derived from **"AI"** by [Icons8](https://icons8.com),
-used under the [Icons8 free licence](https://icons8.com/license), which permits use with
-a link back to icons8.com.
+Original artwork by the project author, under this project's own [LICENSE](LICENSE). No
+third-party asset is involved, so nothing here is owed to anyone else.
 
-- Source art: `assets/dpad-chat-icon.png`, downloaded from Icons8 as `icons8-ai-240.png`
+- Source art: `assets/dpad-chat-icon.png`
 - Derived work: `app/res/icon.png`, produced by `tools/make_icon.py`
 
-The derivation keeps only the alpha channel of the original and recolours it, because the
-source is solid black and would be very nearly invisible against Onion's dark themes. It
-is then composited onto a rounded slate tile.
+The derivation trims the transparent border off the source, squares the crop, and scales
+it to 74x74 with a margin of 6% — the size and framing Onion's own app icons use, measured
+off them rather than documented anywhere.
 
 The source art is kept in `assets/` rather than `app/res/` so that only the generated
 icon ships in the release archive.

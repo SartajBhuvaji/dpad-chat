@@ -740,9 +740,24 @@ chat_opening() {
     # Substituting by parameter expansion rather than sed: the name comes off
     # the card and would otherwise have to be escaped against a regex, and
     # getting that wrong on somebody's ROM title is exactly the sort of failure
-    # that never shows up until it does. Only the first {game} is replaced.
+    # that never shows up until it does. Only the first placeholder is replaced.
+    #
+    # The placeholder is held in a variable rather than written into the pattern
+    # literally, and that is not style. Written literally, the closing brace of
+    # `{game}` is a `}` inside `${...}` - dash and the busybox this is tested
+    # against read it as part of the quoted pattern, and Onion's busybox ends
+    # the expansion there instead. The prompt on the device came up reading
+    # `I'm playing {game} -'*}Pokemon - Emerald Version...`: template
+    # unsubstituted, leftover pattern bytes printed, twice over.
+    #
+    # With the placeholder in a variable the only `}` inside either expansion is
+    # the one that closes it, so there is nothing left for a shell to disagree
+    # about. Nothing available here reproduces the failure, which is exactly why
+    # the form that cannot fail is the one to use.
+    _co_ph='{game}'
+
     case "$CFG_SUGGEST_GAME" in
-        *'{game}'*) ;;
+        *"$_co_ph"*) ;;
         *)
             printf '%s' "$CFG_SUGGEST_GAME"
             return 0
@@ -750,9 +765,9 @@ chat_opening() {
     esac
 
     printf '%s%s%s' \
-        "${CFG_SUGGEST_GAME%%'{game}'*}" \
+        "${CFG_SUGGEST_GAME%%"$_co_ph"*}" \
         "$_co_name" \
-        "${CFG_SUGGEST_GAME#*'{game}'}"
+        "${CFG_SUGGEST_GAME#*"$_co_ph"}"
     return 0
 }
 

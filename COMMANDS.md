@@ -328,6 +328,28 @@ than as nothing at all, and one `?` per character rather than per byte.
 The same text goes into the transcript, so a resumed conversation redraws what you
 actually read rather than the original bytes.
 
+### Bold
+
+Models emit Markdown whatever the system prompt asks for, and on a 53-column screen
+`**Rock Smash**` is four characters of noise wrapped around two words. The markers are
+turned into the terminal's own bold instead:
+
+| What the model sends | What you see |
+| --- | --- |
+| `Use **Rock Smash** here` | Use **Rock Smash** here — in bold, no asterisks |
+| `2 * 3 = 6`, `* a bullet` | unchanged |
+
+Only `**` is touched. A single `*` is a bullet or a multiplication sign far more often
+than it is emphasis.
+
+**With colour off it is left alone.** Under `NO_COLOR`, or when the output is redirected
+rather than drawn on a screen, the markers stay as the model wrote them — colour off means
+escapes off, not formatting discarded.
+
+The transcript always keeps the reply exactly as the model sent it, Markdown and all. That
+file is replayed to the model each turn, so it holds what was said rather than what was
+drawn.
+
 ---
 
 ## The status bar

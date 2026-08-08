@@ -99,6 +99,70 @@ def ascii:
 '
 
 # -----------------------------------------------------------------------------
+# Rendering **bold** while it streams
+# -----------------------------------------------------------------------------
+#
+# Models emit Markdown whatever the system prompt asks for, and on a 53-column
+# screen `**Rock Smash**` is four characters of noise around two words. The
+# markers are turned into the terminal's own bold instead.
+#
+# Bold is a *range*, so this needs state that a streamed reply does not
+# naturally have: whether bold is open carries from one chunk to the next, and
+# a `**` can be cut in half by a chunk boundary. `foreach inputs` gives jq that
+# state, and a lone trailing `*` is held back until the next chunk shows whether
+# it was half of a pair. tests/stream.sh sends a reply one character per event -
+# the worst case there is - and requires the output to be byte-identical to the
+# same text unsplit.
+#
+# Off by 22 rather than 0: the reply is drawn inside a colour, and a full reset
+# would leave everything after the first bold run uncoloured.
+#
+# $p, $i, $s, $c, $r and $state are jq's variables, and are meant to reach jq
+# unexpanded.
+# shellcheck disable=SC2016
+API_JQ_BOLD='
+def bold_on: "\u001b[1m";
+def bold_off: "\u001b[22m";
+
+def md_render($open):
+  ( . | split("**")) as $p
+  | reduce range(0; $p | length) as $i ({out: "", open: $open};
+      if $i == 0 then .out = $p[0]
+      else .out += (if .open then bold_off else bold_on end)
+        | .open = (.open | not)
+        | .out += $p[$i]
+      end);
+
+def md_chunk($state):
+  ($state.pend + .) as $s
+  | (if ($s | endswith("*")) and (($s | endswith("**")) | not)
+     then {body: $s[:-1], pend: "*"}
+     else {body: $s, pend: ""} end) as $c
+  | ($c.body | md_render($state.open)) as $r
+  | {out: $r.out, open: $r.open, pend: $c.pend};
+'
+
+# Whether this jq can run the streaming renderer at all.
+#
+# `foreach inputs` is a different shape of program from the one-value-at-a-time
+# filter used otherwise, and if a jq cannot compile it the failure is at parse
+# time - which `try` cannot catch, and which would mean a reply arriving as
+# nothing rather than as wrong glyphs. So it is asked once, before any reply is
+# in flight, and the plain filter is used if the answer is no.
+API_CAN_RENDER=0
+
+api_render_init() {
+    API_CAN_RENDER=0
+    if printf '' |
+        jq -n --unbuffered "$API_JQ_BOLD"'
+            foreach inputs as $t ({out:"",open:false,pend:""};
+                . as $st | $t | md_chunk($st); .out)' >/dev/null 2>&1; then
+        API_CAN_RENDER=1
+    fi
+    return 0
+}
+
+# -----------------------------------------------------------------------------
 # Request
 # -----------------------------------------------------------------------------
 
@@ -201,11 +265,51 @@ api_send_stream() {
     fi
 
     if [ "$result" -eq 0 ]; then
-        API_REPLY=$(cat "$API_WORK/reply.txt")
+        # Rebuilt from the events rather than taken from what was drawn. The
+        # drawn text has had `**` turned into escapes, and there is no way back
+        # from an escape to the markers it replaced - so the transcript is made
+        # again from the same events, folded to ASCII but not rendered.
+        #
+        # That also keeps the two paths storing the same thing: the buffered one
+        # renders at display time and never alters what it remembers.
+        API_REPLY=$(_api_plain_events)
     fi
 
     _api_cleanup
     return "$result"
+}
+
+# The reply as the model sent it, ASCII-folded and with its Markdown intact.
+# history.json is replayed to the model every turn, so it holds what was said
+# rather than what was drawn.
+_api_plain_events() {
+    [ -s "$API_WORK/events.json" ] || return 0
+    jq -j "$API_JQ_ASCII"' .choices[0].delta.content // empty | ascii' \
+        "$API_WORK/events.json" 2>/dev/null
+}
+
+# The screen half of the streaming pipeline: SSE events in, text to draw out.
+#
+# Two programs rather than one, chosen by what jq can compile. Both fold the
+# reply to ASCII; only the first renders bold, and the difference between them
+# is a reply that reads well and one that reads with `**` in it - never one
+# that does not arrive.
+_api_render_stream() {
+    # Colour off means escapes off, not formatting stripped: under NO_COLOR or
+    # a redirected stdout the markers stay as the model wrote them, which is
+    # what a plain-text reading of the reply should show. ui.sh decides that for
+    # everything else, and C_BOLD is how it says so.
+    if [ "$API_CAN_RENDER" -eq 1 ] && [ -n "${C_BOLD:-}" ]; then
+        jq -j --unbuffered -n "$API_JQ_ASCII$API_JQ_BOLD"'
+            foreach inputs as $e ({out: "", open: false, pend: ""};
+                . as $st
+                | (($e.choices[0].delta.content // "") | ascii)
+                | md_chunk($st);
+                .out)' 2>/dev/null
+    else
+        jq -j --unbuffered "$API_JQ_ASCII"' .choices[0].delta.content // empty | ascii' \
+            2>/dev/null
+    fi
 }
 
 _api_attempt_stream() {
@@ -214,6 +318,7 @@ _api_attempt_stream() {
     API_STATUS=''
     : >"$API_WORK/reply.txt"
     : >"$API_WORK/other.txt"
+    : >"$API_WORK/events.json"
     rm -f "$API_WORK/headers"
 
     log_info "POST (stream) $CFG_BASE_URL/chat/completions model=$CFG_MODEL"
@@ -223,9 +328,8 @@ _api_attempt_stream() {
     {
         curl --config "$API_WORK/curl.cfg" 2>"$API_WORK/curl.err"
         printf '%s' "$?" >"$API_WORK/curl.rc"
-    } | _api_sse_filter |
-        jq -j --unbuffered "$API_JQ_ASCII"' .choices[0].delta.content // empty | ascii' \
-            2>/dev/null | tee "$API_WORK/reply.txt"
+    } | _api_sse_filter | tee "$API_WORK/events.json" |
+        _api_render_stream | tee "$API_WORK/reply.txt"
 
     curl_status=$(cat "$API_WORK/curl.rc" 2>/dev/null || printf '1')
     API_TRANSPORT="$curl_status"

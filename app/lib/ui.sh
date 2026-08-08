@@ -24,11 +24,14 @@ ui_init() {
     # Honour NO_COLOR (https://no-color.org) and skip escapes when redirected,
     # which keeps piped output clean for the test harness.
     if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
-        C_RESET='' C_DIM='' C_BOLD='' C_USER='' C_BOT='' C_WARN=''
+        C_RESET='' C_DIM='' C_BOLD='' C_UNBOLD='' C_USER='' C_BOT='' C_WARN=''
     else
         C_RESET=$(printf '\033[0m')
         C_DIM=$(printf '\033[2m')
         C_BOLD=$(printf '\033[1m')
+        # Normal intensity, not a full reset: a reply is drawn inside a colour,
+        # and resetting everything would leave the rest of it uncoloured.
+        C_UNBOLD=$(printf '\033[22m')
         C_USER=$(printf '\033[36m')
         C_BOT=$(printf '\033[32m')
         C_WARN=$(printf '\033[33m')
@@ -110,10 +113,60 @@ ui_error() {
     printf '\n'
 }
 
+# Markdown emphasis, rendered rather than shown. Models emit **bold** whatever
+# the system prompt says, and on a 53-column screen the markers are noise.
+#
+# Only `**` is handled. A single `*` is a bullet or a multiplication sign far
+# more often than it is emphasis, and turning those into escapes would be worse
+# than leaving them be.
+#
+# The separator is held in a variable rather than written into the patterns.
+# `*` is a wildcard in a parameter expansion, so it has to be quoted to be
+# literal - and a quoted pattern is exactly what Onion's busybox reads
+# differently, which is how `{game}` reached a device unsubstituted.
+UI_MD_BOLD='**'
+
+ui_markdown() {
+    # Colour off means escapes off, not formatting discarded. With nothing to
+    # put in their place the markers are what carries the emphasis, so they
+    # stay - which is also what keeps piped output the same as it always was.
+    if [ -z "${C_BOLD:-}" ]; then
+        printf '%s' "$1"
+        return 0
+    fi
+
+    _md_rest="$1"
+    _md_out=''
+    _md_open=0
+
+    while :; do
+        case "$_md_rest" in
+            *"$UI_MD_BOLD"*) ;;
+            *) break ;;
+        esac
+
+        _md_out="$_md_out${_md_rest%%"$UI_MD_BOLD"*}"
+        _md_rest="${_md_rest#*"$UI_MD_BOLD"}"
+
+        if [ "$_md_open" -eq 0 ]; then
+            _md_out="$_md_out$C_BOLD"
+            _md_open=1
+        else
+            _md_out="$_md_out$C_UNBOLD"
+            _md_open=0
+        fi
+    done
+
+    printf '%s%s' "$_md_out" "$_md_rest"
+}
+
+# Wrapped first, then rendered. `fold` counts bytes, so escapes inserted before
+# it would be counted as visible columns and every line would come out short.
+# `**` carries no newline, so folding cannot separate a marker from its pair.
 ui_assistant() {
     printf '\n%s' "$C_BOT"
-    printf '%s\n' "$*" | ui_wrap
-    printf '%s\n' "$C_RESET"
+    ui_markdown "$(printf '%s\n' "$*" | ui_wrap)"
+    printf '\n%s\n' "$C_RESET"
 }
 
 # Columns ui_prompt occupies. The colours around it are escapes and take no

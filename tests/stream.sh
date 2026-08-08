@@ -6,6 +6,10 @@
 # client that buffered the whole reply and printed it at the end would pass
 # every content check here.
 
+# Resolve sourced files relative to this script. Must precede the first command
+# to apply file-wide.
+# shellcheck source-path=SCRIPTDIR
+
 set -eu
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -245,6 +249,108 @@ if [ -n "$(printf '%s' "$out" | LC_ALL=C tr -dc '\200-\377')" ]; then
     fail 'nor reaches the screen'
 else
     pass 'nor reaches the screen'
+fi
+
+# -----------------------------------------------------------------------------
+# Rendering **bold**
+# -----------------------------------------------------------------------------
+
+ESC=$(printf '\033')
+unstyle() { sed "s/${ESC}\[[0-9;]*m//g"; }
+
+# Both renderers, driven directly. The app blanks colour when its output is not
+# a terminal, and the harness sets NO_COLOR on top of that, so the escapes can
+# only be seen by calling the renderers with colour forced on.
+
+BOLD_IN='Use **Rock Smash** here, then **go** north. 2 * 3 = 6'
+BOLD_OUT="Use ${ESC}[1mRock Smash${ESC}[22m here, then ${ESC}[1mgo${ESC}[22m north. 2 * 3 = 6"
+
+# The shell one, used for buffered replies and for replayed ones.
+shell_render() {
+    (
+        # shellcheck source=../app/lib/ui.sh
+        . "$REPO_ROOT/app/lib/ui.sh"
+        C_BOLD=$(printf '\033[1m')
+        C_UNBOLD=$(printf '\033[22m')
+        ui_markdown "$1"
+    )
+}
+
+assert_eq 'the shell renderer turns the markers into bold' \
+    "$(shell_render "$BOLD_IN")" "$BOLD_OUT"
+assert_eq 'a lone asterisk is left alone' \
+    "$(shell_render 'one * two')" 'one * two'
+assert_eq 'an unclosed marker still opens bold' \
+    "$(shell_render 'a **b')" "a ${ESC}[1mb"
+
+# The jq one, used while a reply streams. Driven event by event, because the
+# state it carries between them is the whole difficulty.
+jq_render() {
+    (
+        # shellcheck source=../app/lib/api.sh
+        . "$REPO_ROOT/app/lib/api.sh"
+        jq -j --unbuffered -n "$API_JQ_ASCII$API_JQ_BOLD"'
+            foreach inputs as $e ({out: "", open: false, pend: ""};
+                . as $st
+                | (($e.choices[0].delta.content // "") | ascii)
+                | md_chunk($st);
+                .out)'
+    )
+}
+
+# One event carrying the lot.
+one=$(jq -n --arg t "$BOLD_IN" '{choices:[{delta:{content:$t}}]}' | jq_render)
+assert_eq 'the jq renderer agrees with it' "$one" "$BOLD_OUT"
+
+# One event per character, which is the worst a chunk boundary can do to a
+# two-character marker: every `**` is cut in half.
+many=$(printf '%s' "$BOLD_IN" | fold -w1 |
+    jq -R '{choices:[{delta:{content:.}}]}' | jq_render)
+assert_eq 'and still agrees a character at a time' "$many" "$BOLD_OUT"
+
+# -----------------------------------------------------------------------------
+
+# End to end, where the harness has colour off. The markers then stay as the
+# model wrote them - colour off means escapes off, not formatting discarded -
+# and the transcript is the same either way.
+
+whole=$(session mdw 'scenario:markdown' '/quit')
+split=$(session mds 'scenario:markdown_split' '/quit')
+buffered=$(STREAM=false session mdb 'scenario:markdown' '/quit')
+
+assert_says 'with colour off the markers are left alone' "$whole" '**Rock Smash**'
+assert_says 'in the buffered path too' "$buffered" '**Rock Smash**'
+
+if printf '%s' "$whole" | grep -q "${ESC}\[1m"; then
+    fail 'and no bold escape is emitted'
+else
+    pass 'and no bold escape is emitted'
+fi
+
+# A reply split one character per event has to reach the screen as the same
+# bytes as one that arrived whole.
+if [ "$(printf '%s' "$whole" | od -An -c)" = "$(printf '%s' "$split" | od -An -c)" ]; then
+    pass 'a reply split one character per event draws identically'
+else
+    fail 'a reply split one character per event draws identically'
+fi
+
+# history.json is replayed to the model every turn, so it holds what was said
+# rather than what was drawn - Markdown intact, no escapes, and the same
+# whichever path produced it.
+assert_eq 'the transcript keeps the reply as the model sent it' \
+    "$(hist mdw '.[-1].content')" "$BOLD_IN"
+
+assert_eq 'and the split reply records the same thing' \
+    "$(hist mds '.[-1].content')" "$BOLD_IN"
+
+assert_eq 'both paths store the reply identically' \
+    "$(hist mdw '.[-1].content')" "$(hist mdb '.[-1].content')"
+
+if hist mdw '.[-1].content' | grep -q "${ESC}\["; then
+    fail 'no escape reaches history'
+else
+    pass 'no escape reaches history'
 fi
 
 # -----------------------------------------------------------------------------

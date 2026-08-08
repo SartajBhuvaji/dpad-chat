@@ -14,7 +14,7 @@ Images used by [SCREENSHOTS.md](../../SCREENSHOTS.md) and [README.md](../../READ
 | `chat_resumed.png` | a conversation resumed after reopening |
 | `chat_prev_game_prefilled.png` | the prompt pre-filled with the game just played |
 | `chat_prev_game_prefilled_question.png` | that opening, with a question typed after it |
-| `chat_prev_game_prefilled_answered.png` | the answer to a question about the game |
+| `chat_prev_game_prefilled_answered.png` | a reply about the game, with its Markdown rendered as bold |
 | `help.png` | `/help` |
 | `about.png` | `/about` |
 | `config.png` | `/config` |

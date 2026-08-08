@@ -66,6 +66,18 @@ screen_init() {
     _spin_init_tick
 }
 
+# The height right now, rather than the one measured at startup.
+#
+# SCREEN_ROWS is deliberately fixed after screen_init - the scroll region is
+# pinned to it, and a status bar that moved would be worse than one that is
+# occasionally in the wrong place. This is for reporting: if the two ever
+# disagree, something resized the terminal under us, and /about is where that
+# should be visible rather than left to be inferred from a display that has
+# quietly gone wrong.
+screen_rows_now() {
+    _screen_detect_rows
+}
+
 _screen_detect_rows() {
     rows=''
 

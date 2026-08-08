@@ -194,6 +194,16 @@ api_key = sk-...
 Create the `data/` directory if it is not there — it is made at first run, so a fresh
 install will not have one yet.
 
+**On the device itself,** with no computer at all — open the app and type:
+
+```
+/config api_key
+```
+
+It asks for the key with the input hidden, writes it to `settings.cfg`, and redacts it
+everywhere afterwards. This is the route that makes a card you were handed usable without
+plugging anything in.
+
 **On the device,** over SSH, if you would rather not pull the card:
 
 ```sh

@@ -39,6 +39,7 @@ lint:
 
 test:
 	@tests/smoke.sh
+	@tests/config.sh
 	@tests/api.sh
 	@tests/net.sh
 	@tests/history.sh

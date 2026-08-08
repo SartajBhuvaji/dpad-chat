@@ -52,6 +52,7 @@ cmd_help() {
     ui_info '/help       this list'
     ui_info '/clear      start a new chat  (/c)'
     ui_info '/about      version and settings'
+    ui_info '/config     change a setting  (/set)'
     ui_info '/update     check for a new version'
     ui_info '/uninstall  remove from the device'
     ui_info '/quit       exit'
@@ -63,9 +64,9 @@ cmd_help() {
 
     if ! config_has_key; then
         printf '\n'
-        ui_warn 'No API key set. Add this line to'
+        ui_warn 'No API key set. Type /config api_key'
+        ui_warn 'to enter one, or put api_key=<key> in'
         ui_warn "$DATA_DIR/settings.cfg"
-        ui_warn 'api_key=<your key>'
     fi
 }
 
@@ -134,6 +135,238 @@ cmd_new() {
 # answer at the prompt. What is downloaded is unpacked beside the app and left
 # there: the swap belongs to launch.sh, where nothing from the app directory is
 # running. See lib/update.sh for why that ordering is not optional.
+# -----------------------------------------------------------------------------
+# /config
+# -----------------------------------------------------------------------------
+#
+# Only the settings that are cheap to change from here. A character costs
+# around five button presses, so a command that makes you type a value is
+# barely better than editing settings.cfg over SSH - the point of this is the
+# ones you can cycle without typing anything but the command.
+#
+# The rest stay in the file on purpose: base_url and github_token are long and
+# set once if ever, the timeouts are debugging knobs, replay_messages is
+# cosmetic, and the suggest templates are free text that stage B fills in on
+# its own. COMMANDS.md says so, so nobody has to guess why their setting is
+# missing.
+#
+# api_key is the exception that earns its typing: it is what stands between a
+# fresh install and never needing a computer at all.
+
+# Cycle orders. Not a menu of everything that works - `/config model gpt-5`
+# sets whatever you name. These are the few worth reaching with one press, and
+# the list ages better as an order to walk than as a validation rule.
+CONFIG_MODELS='gpt-4o-mini gpt-4o gpt-4.1-mini gpt-4.1'
+CONFIG_MAX_TOKENS='256 512 1024 2048'
+CONFIG_HISTORY='4 10 20 40'
+CONFIG_BOOLS='true false'
+
+# Every name /config will act on, which is also what it lists.
+CONFIG_KEYS='model max_tokens history_messages stream suggest_strip_tags api_key'
+
+# The next entry after $2 in the list $1, wrapping. A value that is not in the
+# list - set by hand in the file, or by /config with an argument - lands on the
+# first entry, which is the only answer that is always available.
+_config_next() {
+    _cn_first=''
+    _cn_take=0
+
+    for _cn_item in $1; do
+        [ -n "$_cn_first" ] || _cn_first="$_cn_item"
+        if [ "$_cn_take" -eq 1 ]; then
+            printf '%s' "$_cn_item"
+            return 0
+        fi
+        [ "$_cn_item" != "$2" ] || _cn_take=1
+    done
+
+    printf '%s' "$_cn_first"
+}
+
+# What a setting reads as now. api_key is redacted here exactly as it is in
+# /about: the screen is the one place a photograph or a bug report catches it.
+_config_show() {
+    case "$1" in
+        model) printf '%s' "$CFG_MODEL" ;;
+        max_tokens) printf '%s' "$CFG_MAX_TOKENS" ;;
+        history_messages) printf '%s' "$CFG_HISTORY_MESSAGES" ;;
+        stream) printf '%s' "$CFG_STREAM" ;;
+        suggest_strip_tags) printf '%s' "$CFG_SUGGEST_STRIP_TAGS" ;;
+        api_key) config_redact_key ;;
+    esac
+}
+
+_config_cycle() {
+    case "$1" in
+        model) _config_next "$CONFIG_MODELS" "$CFG_MODEL" ;;
+        max_tokens) _config_next "$CONFIG_MAX_TOKENS" "$CFG_MAX_TOKENS" ;;
+        history_messages) _config_next "$CONFIG_HISTORY" "$CFG_HISTORY_MESSAGES" ;;
+        stream) _config_next "$CONFIG_BOOLS" "$CFG_STREAM" ;;
+        suggest_strip_tags) _config_next "$CONFIG_BOOLS" "$CFG_SUGGEST_STRIP_TAGS" ;;
+    esac
+}
+
+# Checked here rather than left to config_load's validation, because that runs
+# at startup and repairs a bad value silently. Refusing at the point of typing
+# is what tells somebody they typed it wrong.
+_config_valid() {
+    case "$1" in
+        max_tokens | history_messages)
+            case "$2" in
+                '' | *[!0-9]*) return 1 ;;
+            esac
+            [ "$2" -gt 0 ] || return 1
+            ;;
+        stream | suggest_strip_tags)
+            case "$2" in
+                true | false) ;;
+                *) return 1 ;;
+            esac
+            ;;
+        model)
+            # Anything printable with no spaces. A model name is sent straight
+            # into the request body, and a space in one means a typo rather
+            # than a model nobody has heard of.
+            case "$2" in
+                '' | *[!!-~]*) return 1 ;;
+            esac
+            ;;
+    esac
+    return 0
+}
+
+# Applies to the running session as well as the file. A setting that only took
+# effect after a restart would be indistinguishable from one that did not work.
+_config_apply() {
+    case "$1" in
+        model) CFG_MODEL="$2" ;;
+        max_tokens) CFG_MAX_TOKENS="$2" ;;
+        history_messages) CFG_HISTORY_MESSAGES="$2" ;;
+        stream) CFG_STREAM="$2" ;;
+        suggest_strip_tags) CFG_SUGGEST_STRIP_TAGS="$2" ;;
+        api_key) CFG_API_KEY="$2" ;;
+    esac
+}
+
+_config_store() {
+    _cs_was=$(_config_show "$1")
+    _config_apply "$1" "$2"
+
+    if ! config_set "$1" "$2"; then
+        # The session already has it, so say what was kept and what was not
+        # rather than pretending either way.
+        ui_error "Could not write $CONFIG_FILE"
+        ui_info "$1 is set for this session only"
+        return 1
+    fi
+
+    ui_info "$1  $_cs_was -> $(_config_show "$1")"
+    return 0
+}
+
+# The key is never taken as an argument. The REPL puts every line it accepts
+# into the recall list, so `/config api_key sk-...` would leave the key one
+# press of Up away - and on screen above the prompt, where it stays until the
+# transcript scrolls. Asking for it separately is what avoids both.
+_config_ask_key() {
+    printf '\n%sPaste or type the key, then Start.%s\n' "$C_DIM" "$C_RESET"
+    printf '%sIt is not shown, and not remembered by Up.%s\n' "$C_DIM" "$C_RESET"
+    printf '%s key> %s' "$C_USER" "$C_RESET"
+
+    input_mask
+    if ! input_readline 6; then
+        printf '\n'
+        return 1
+    fi
+
+    _ck_key=$(printf '%s' "$INPUT_LINE" | tr -d '[:space:]')
+
+    if [ -z "$_ck_key" ]; then
+        ui_info 'Nothing entered; the key is unchanged.'
+        return 1
+    fi
+
+    # The same check tools/install.sh makes. A key with anything unprintable in
+    # it is a mistyped paste, and it would come back as an authentication
+    # failure with nothing pointing at the cause.
+    case "$_ck_key" in
+        *[!!-~]*)
+            ui_error 'That contains characters a key cannot have; nothing was changed.'
+            return 1
+            ;;
+    esac
+
+    _config_store api_key "$_ck_key" || return 1
+    return 0
+}
+
+cmd_config() {
+    # The command, then a name, then a value - and the value may contain
+    # spaces, so it is whatever is left rather than the third word.
+    _cc_rest="${1#/config}"
+    _cc_rest="${_cc_rest#"${_cc_rest%%[![:space:]]*}"}"
+
+    _cc_name="${_cc_rest%%[[:space:]]*}"
+    _cc_value=''
+    case "$_cc_rest" in
+        *[[:space:]]*)
+            _cc_value="${_cc_rest#*[[:space:]]}"
+            _cc_value=$(printf '%s' "$_cc_value" |
+                sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+            ;;
+    esac
+
+    if [ -z "$_cc_name" ]; then
+        for _cc_k in $CONFIG_KEYS; do
+            ui_info "$(printf '%-19s%s' "$_cc_k" "$(_config_show "$_cc_k")")"
+        done
+        printf '\n'
+        ui_info '/config <name>          next value'
+        ui_info '/config <name> <value>  set it'
+        return 0
+    fi
+
+    # Named a setting that exists but is not one of these. Saying where it does
+    # live beats "unknown", which reads as a typo.
+    case " $CONFIG_KEYS " in
+        *" $_cc_name "*) ;;
+        *)
+            case "$_cc_name" in
+                base_url | github_token | connect_timeout | timeout | \
+                    replay_messages | system_prompt | suggest | suggest_game)
+                    ui_error "$_cc_name is not editable here"
+                    ui_info "Edit $CONFIG_FILE to change it"
+                    ;;
+                *)
+                    ui_error "No setting called $_cc_name"
+                    ui_info '/config lists the ones you can change'
+                    ;;
+            esac
+            return 0
+            ;;
+    esac
+
+    if [ "$_cc_name" = 'api_key' ]; then
+        # Deliberately ignores a value given inline; see _config_ask_key.
+        _config_ask_key || :
+        return 0
+    fi
+
+    if [ -z "$_cc_value" ]; then
+        _cc_value=$(_config_cycle "$_cc_name")
+    elif ! _config_valid "$_cc_name" "$_cc_value"; then
+        ui_error "$_cc_value is not a value $_cc_name can take"
+        case "$_cc_name" in
+            stream | suggest_strip_tags) ui_info 'Use true or false' ;;
+            max_tokens | history_messages) ui_info 'Use a whole number above zero' ;;
+        esac
+        return 0
+    fi
+
+    _config_store "$_cc_name" "$_cc_value" || :
+    return 0
+}
+
 cmd_update() {
     if update_is_pending; then
         ui_info 'An update is already downloaded.'
@@ -341,6 +574,11 @@ dispatch_command() {
             ;;
         /about | /version)
             cmd_about
+            ;;
+        # Matched with a trailing space too, so the name and value come through
+        # as part of the line rather than being lost to an exact match.
+        /config | /config[[:space:]]* | /set | /set[[:space:]]*)
+            cmd_config "$1"
             ;;
         /update | /upgrade)
             cmd_update

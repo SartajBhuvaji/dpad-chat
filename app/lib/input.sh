@@ -70,6 +70,7 @@ input_init() {
     _input_reset_line
     _input_recall_init
     _input_suggest_init
+    INPUT_MASK=0
 
     # stdin carries the keystrokes and stdout is where the line is drawn, so
     # both have to be a terminal. dd and stty are busybox builtins on the
@@ -306,9 +307,22 @@ _input_redraw() {
         _rd_pad=$((_INPUT_DRAWN_LEN - _rd_len))
     fi
 
+    # Masked: the same number of columns, so every position calculation above
+    # and below stays true, but none of the characters. The buffer is untouched
+    # - what is hidden is the drawing, not the line.
+    _rd_shown="$_rd_all"
+    if [ "$INPUT_MASK" -eq 1 ]; then
+        _rd_shown=''
+        _rd_m=0
+        while [ "$_rd_m" -lt "${#_rd_all}" ]; do
+            _rd_shown="$_rd_shown*"
+            _rd_m=$((_rd_m + 1))
+        done
+    fi
+
     _input_move_back "$_INPUT_DRAWN_POS" 0
 
-    printf '%s' "$_rd_all"
+    printf '%s' "$_rd_shown"
     [ -z "$_rd_ghost" ] ||
         printf '%s%s%s' "$_INPUT_DIM" "$_rd_ghost" "$_INPUT_DIM_OFF"
 
@@ -480,6 +494,7 @@ _input_suggest_offer() {
 
     [ -n "$INPUT_SUGGEST" ] || return 0
     [ -n "$_INPUT_DIM" ] || return 0
+    [ "$INPUT_MASK" -eq 0 ] || return 0
 
     _INPUT_SUGGEST_ON=1
     _input_redraw
@@ -592,6 +607,10 @@ _input_recall_show() {
 }
 
 _input_recall_up() {
+    # Not while masked. The walk would swap the hidden line for an earlier one
+    # that the user cannot see to check, and a secret typed at a prompt has no
+    # business being replaced by something they typed before it.
+    [ "$INPUT_MASK" -eq 0 ] || return 0
     [ "$INPUT_RECALL_AT" -lt "$INPUT_RECALL_N" ] || return 0
 
     # Leaving the live line for the first time, so keep it to come back to.
@@ -604,6 +623,7 @@ _input_recall_up() {
 }
 
 _input_recall_down() {
+    [ "$INPUT_MASK" -eq 0 ] || return 0
     [ "$INPUT_RECALL_AT" -gt 0 ] || return 0
 
     INPUT_RECALL_AT=$((INPUT_RECALL_AT - 1))
@@ -750,10 +770,26 @@ input_readline() {
     # Offered once. A second prompt gets one only if the caller sets another.
     INPUT_SUGGEST=''
 
+    # Masking is per line for the same reason: leaving it on would hide a line
+    # somebody meant to see, and the failure would be silent.
+    INPUT_MASK=0
+
     input_restore
 
     INPUT_LINE="$INPUT_HEAD$INPUT_TAIL"
 
     [ "$_in_eof" -eq 0 ] || return 1
+    return 0
+}
+
+# Draws the next line as asterisks. One shot, cleared by the read that used it,
+# for the same reason the suggestion is: a mask left on by accident would hide
+# a line somebody meant to see, and nothing about that failure is visible.
+#
+# The buffer is unaffected - INPUT_LINE comes back as it was typed. Recall is
+# suppressed while it is on, since swapping a hidden line for an earlier one
+# the user cannot see to check is not a thing a secret field should do.
+input_mask() {
+    INPUT_MASK=1
     return 0
 }

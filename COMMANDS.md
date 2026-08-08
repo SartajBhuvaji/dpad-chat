@@ -20,6 +20,7 @@ Everything you can type, press, or configure.
 | `/help` | `/h`, `/?` | list the commands |
 | `/clear` | `/c`, `/cls`, `/new`, `/reset` | start a new chat |
 | `/about` | `/version` | version, width, model, TLS state, history size |
+| `/config` | `/set` | change a setting from the device |
 | `/update` | `/upgrade` | check GitHub for a new release, and offer to install it |
 | `/uninstall` | `/remove` | delete the app, and everything it keeps, from the card |
 | `/quit` | `/exit`, `/q` | exit to the Apps menu |
@@ -70,6 +71,67 @@ The first screen to check when something is not working:
   means requests will fail rather than downgrade.
 - **net** — whether a default route exists, and what year the clock thinks it is. A year
   before 2024 makes every certificate look expired.
+
+### `/config`
+
+Changes the settings worth changing without a computer. `/config` on its own lists them:
+
+```
+model              gpt-4o-mini
+max_tokens         512
+history_messages   10
+stream             true
+suggest_strip_tags true
+api_key            sk-pro...bXQA
+
+/config <name>          next value
+/config <name> <value>  set it
+```
+
+**`/config <name>` moves to the next value** and is the way you are meant to use it — a
+character costs several button presses, so a setting you can change without typing one is
+worth more than a setting you can type exactly. The cycles are:
+
+| Setting | Cycles through |
+| --- | --- |
+| `model` | `gpt-4o-mini` → `gpt-4o` → `gpt-4.1-mini` → `gpt-4.1` |
+| `max_tokens` | `256` → `512` → `1024` → `2048` |
+| `history_messages` | `4` → `10` → `20` → `40` |
+| `stream` | `true` → `false` |
+| `suggest_strip_tags` | `true` → `false` |
+
+The model list is a cycle order, not a restriction — `/config model whatever-you-like`
+sets any name, which is what you want against an OpenAI-compatible endpoint that offers
+something else. A value that is not in the list cycles to the first entry.
+
+Changes apply to the conversation you are in **and** are written to `settings.cfg`, so
+they survive closing the app. Comments and settings you have hand-edited into that file
+are left alone.
+
+**`/config api_key`** asks for the key rather than taking it as an argument, and hides
+what you type:
+
+```
+> /config api_key
+
+Paste or type the key, then Start.
+It is not shown, and not remembered by Up.
+
+ key> *********************
+```
+
+That is not decoration. Every line you send is kept for **Up** to recall and stays on
+screen above the prompt, so a key given as `/config api_key sk-...` would sit in both.
+Asking separately avoids both, and the value is redacted everywhere it is displayed
+afterwards.
+
+This is what makes a device with no computer nearby usable from scratch: install the
+folder, open the app, `/config api_key`, and you are done.
+
+**Settings not listed here stay in the file.** `base_url` and `github_token` are long and
+set once if ever, the timeouts are for debugging, `replay_messages` is cosmetic, and the
+`suggest` templates are free text. `/config base_url` says so rather than reporting an
+unknown name.
 
 ### `/update`
 
@@ -301,8 +363,14 @@ suggest_game = I'm playing {game} -
 | `suggest_strip_tags` | `true` | drop `(USA, Europe)` and the like from the game's name |
 | `github_token` | *(none)* | only used by `/update`; see below |
 
+Six of these can be changed from the device with [`/config`](#config) instead of editing
+the file: `model`, `max_tokens`, `history_messages`, `stream`, `suggest_strip_tags` and
+`api_key`. The rest are here because they are long, rarely touched, or free text — none of
+which suits a d-pad.
+
 Lines beginning with `#` are comments. Spaces around the `=` are fine. Unknown keys are
-logged and ignored rather than failing the launch.
+logged and ignored rather than failing the launch. `/config` preserves all of that when it
+writes: comments, spacing and settings it does not know about come back untouched.
 
 The file is **parsed**, not sourced — every line is matched against the list above, so
 nothing written in it is ever executed. That matters because it holds a credential and

@@ -6,6 +6,7 @@ Everything you can type, press, or configure.
 - [Controls](#controls)
 - [Editing what you type](#editing-what-you-type)
 - [Suggested openings](#suggested-openings)
+- [What replies look like](#what-replies-look-like)
 - [The status bar](#the-status-bar)
 - [Settings](#settings)
 - [Environment overrides](#environment-overrides)
@@ -300,6 +301,32 @@ only appears when you have been playing something.
 The name must be printable ASCII by the time it reaches the prompt, because the cursor
 maths at the prompt counts characters as columns. A title with an accent in it is dropped
 rather than mangled, and the prompt comes up plain.
+
+---
+
+## What replies look like
+
+Replies are folded down to ASCII before they reach the screen.
+
+That is not a preference. The panel draws ASCII and nothing else — `st` renders a
+multi-byte character as one wrong glyph and then swallows the character after it, so an
+unfolded reply arrives as `Pok(C)mon` and `HereP s how`. Models produce curly quotes,
+em dashes and accented names constantly, so this is most replies rather than an edge case.
+
+| What the model sends | What you see |
+| --- | --- |
+| `café`, `naïve`, `Pokémon` | `cafe`, `naive`, `Pokemon` |
+| `“quoted”`, `it’s` | `"quoted"`, `it's` |
+| `—`, `–`, `…` | `-`, `-`, `...` |
+| `Æsop`, `straße` | `AEsop`, `strasse` |
+| `5 °C`, `≤`, `→`, `™` | `5 degC`, `<=`, `->`, `(tm)` |
+| anything with no ASCII spelling | one `?` per character |
+
+The last row is deliberate: a line of Japanese reads as visibly missing characters rather
+than as nothing at all, and one `?` per character rather than per byte.
+
+The same text goes into the transcript, so a resumed conversation redraws what you
+actually read rather than the original bytes.
 
 ---
 

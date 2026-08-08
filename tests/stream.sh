@@ -213,6 +213,41 @@ out=$(STREAM=nonsense session bogus '/about' '/quit')
 assert_says 'an invalid stream setting falls back to true' "$out" 'stream true'
 
 # -----------------------------------------------------------------------------
+# Folding a streamed reply down to ASCII
+# -----------------------------------------------------------------------------
+
+# The reason this is done in jq rather than in the shell. The mock splits the
+# reply mid-character - "Pokemon" is cut inside the e-acute, so its two bytes
+# arrive in different chunks. A filter working on bytes would have to buffer
+# across chunks and reassemble; jq is handed decoded text, so by the time the
+# fold runs there is nothing left to split.
+
+out=$(session uni 'scenario:unicode' '/quit')
+assert_says 'a character split across chunks survives the fold' "$out" 'Pokemon'
+assert_says 'and the rest of the reply with it' "$out" 'Cafe - "Here'"'"'s" how...'
+assert_says 'accents outside the split too' "$out" 'naive'
+assert_says 'and multi-letter spellings' "$out" 'AEsop'
+
+# What goes into the transcript has to match what went on screen, or a resumed
+# conversation would redraw the mojibake the fold just removed.
+assert_eq 'the transcript keeps the folded text' \
+    "$(hist uni '.[-1].content' | head -c 4)" 'Cafe'
+
+# High bytes alone: the escapes the app draws with are control characters and
+# belong in the output.
+if [ -n "$(hist uni '.[-1].content' | LC_ALL=C tr -dc '\200-\377')" ]; then
+    fail 'nothing above ASCII is written to history'
+else
+    pass 'nothing above ASCII is written to history'
+fi
+
+if [ -n "$(printf '%s' "$out" | LC_ALL=C tr -dc '\200-\377')" ]; then
+    fail 'nor reaches the screen'
+else
+    pass 'nor reaches the screen'
+fi
+
+# -----------------------------------------------------------------------------
 
 printf '\n%s test(s), %s failure(s)\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

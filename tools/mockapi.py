@@ -41,7 +41,22 @@ MAX_BODY_BYTES = 1 << 20
 
 # Scenarios that have something to stream. Everything else is an error, which
 # the real API also returns as a plain body rather than as events.
-STREAMABLE = {"ok", "long", "multiline", "stream_cut", "echo_payload"}
+STREAMABLE = {"ok", "long", "multiline", "stream_cut", "echo_payload", "unicode"}
+
+# What models actually emit: curly quotes, an em dash, an ellipsis, accented
+# Latin, and something with no ASCII spelling at all. The panel can draw none of
+# it, so the client folds it down before it reaches the screen.
+#
+# Split across the chunk boundaries a streaming client sees, and deliberately
+# through the middle of the multi-byte characters - "Pokemon" is cut inside the
+# e-acute. A client filtering bytes rather than decoded text would corrupt it
+# there, which is the whole reason the fold happens in jq.
+UNICODE_REPLY_PARTS = [
+    "Caf\u00e9 \u2014 \u201cHere\u2019s\u201d how\u2026 ",
+    "Pok\u00e9",
+    "mon, na\u00efve, \u00c6sop, stra\u00dfe, 5 \u00b0C, \u2264 3, \u65e5\u672c",
+]
+UNICODE_REPLY = "".join(UNICODE_REPLY_PARTS)
 
 # Small enough to keep the suite quick, large enough that a client which
 # buffered the whole response would be visibly different from one that does not.
@@ -259,6 +274,9 @@ class Handler(BaseHTTPRequestHandler):
         if scenario == "ok":
             self._send_json(200, _completion(f"You said: {prompt}"))
 
+        elif scenario == "unicode":
+            self._send_json(200, _completion(UNICODE_REPLY))
+
         elif scenario == "long":
             # Exercises wrapping: far wider than the device's terminal.
             self._send_json(200, _completion(LONG_REPLY))
@@ -326,6 +344,9 @@ class Handler(BaseHTTPRequestHandler):
             # which is also what proves nothing is dropped between events.
             body = json.dumps(payload, sort_keys=True)
             chunks = [body[i : i + 24] for i in range(0, len(body), 24)]
+            cut = False
+        elif scenario == "unicode":
+            chunks = list(UNICODE_REPLY_PARTS)
             cut = False
         else:
             chunks = [f"You said: {prompt}"]

@@ -67,9 +67,13 @@ Carry on typing the part that is actually your question.
 
 <img src="docs/img/chat_prev_game_prefilled_question.png" alt="The pre-filled opening with a question typed after it" width="640">
 
-Then **Menu** again puts you back in the game, where you left it.
+The reply comes back with its Markdown rendered rather than shown — emphasis in bold, no
+asterisks — and folded to ASCII, so accents and curly quotes read as themselves instead of
+as the wrong glyph.
 
-<img src="docs/img/chat_prev_game_prefilled_answered.png" alt="The answer to a question about the game" width="640">
+<img src="docs/img/chat_prev_game_prefilled_answered.png" alt="A reply about the game, with its Markdown rendered as bold" width="640">
+
+Then **Menu** again puts you back in the game, where you left it.
 
 ---
 

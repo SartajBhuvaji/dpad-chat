@@ -76,7 +76,7 @@ cmd_about() {
     # keeps a border - 53 columns rules one out across, but says nothing about
     # down, and the row count is what the status bars are pinned by.
     ui_info "width    ${UI_COLS} cols"
-    ui_info "height   ${SCREEN_ROWS:-?} rows"
+    ui_info "height   ${SCREEN_ROWS:-?} rows$(_about_rows_now)"
     if is_device; then
         ui_info 'host     Miyoo (Onion OS)'
     else
@@ -89,6 +89,17 @@ cmd_about() {
     ui_info "tls      $(_about_tls)"
     ui_info "net      $(_about_net)"
     ui_info "data     $DATA_DIR"
+}
+
+# Only says anything when the terminal is not the height it was at startup.
+# Nothing here resizes it, so a difference means something else did - and on
+# this device the interesting candidate is st's on-screen keyboard, which is
+# drawn over the screen rather than beside it and so should not resize
+# anything at all.
+_about_rows_now() {
+    _ar_now=$(screen_rows_now)
+    [ "$_ar_now" != "${SCREEN_ROWS:-}" ] || return 0
+    printf ' (now %s)' "$_ar_now"
 }
 
 _about_tls() {
@@ -131,10 +142,6 @@ cmd_new() {
     fi
 }
 
-# Checking is always safe; installing is not, so it never happens without an
-# answer at the prompt. What is downloaded is unpacked beside the app and left
-# there: the swap belongs to launch.sh, where nothing from the app directory is
-# running. See lib/update.sh for why that ordering is not optional.
 # -----------------------------------------------------------------------------
 # /config
 # -----------------------------------------------------------------------------
@@ -367,6 +374,10 @@ cmd_config() {
     return 0
 }
 
+# Checking is always safe; installing is not, so it never happens without an
+# answer at the prompt. What is downloaded is unpacked beside the app and left
+# there: the swap belongs to launch.sh, where nothing from the app directory is
+# running. See lib/update.sh for why that ordering is not optional.
 cmd_update() {
     if update_is_pending; then
         ui_info 'An update is already downloaded.'

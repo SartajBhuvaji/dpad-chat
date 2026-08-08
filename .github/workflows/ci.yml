@@ -24,6 +24,9 @@ jobs:
       - name: Smoke tests
         run: tests/smoke.sh
 
+      - name: Settings and /config
+        run: tests/config.sh
+
       - name: API tests
         run: tests/api.sh
 

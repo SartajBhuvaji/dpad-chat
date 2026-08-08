@@ -159,6 +159,7 @@ fi
 
 input_init
 input_suggest "${DRIVER_SUGGEST:-}"
+[ -z "${DRIVER_MASK:-}" ] || input_mask
 
 before=$(stty -g)
 if input_readline "${DRIVER_PROMPT_COLS:-0}"; then
@@ -186,7 +187,8 @@ DRIVER_OUT="$WORK_DIR/driver.out"
 DRIVER_PROMPT_COLS=0
 DRIVER_COLS=''
 DRIVER_SUGGEST=''
-export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS DRIVER_SUGGEST
+DRIVER_MASK=''
+export REPO_ROOT DRIVER_OUT DRIVER_PROMPT_COLS DRIVER_COLS DRIVER_SUGGEST DRIVER_MASK
 
 # Types the given keystrokes at a pty and leaves the outcome in KEYS_RC,
 # KEYS_LINE and KEYS_ECHO. KEYS_ECHO is everything the editor drew, with none
@@ -241,7 +243,18 @@ input_init
 input_suggest "${DRIVER_SUGGEST:-}"
 : >"$DRIVER_OUT"
 
-while input_readline "${DRIVER_PROMPT_COLS:-0}"; do
+_line_no=0
+while :; do
+    # DRIVER_MASK is `all`, or a count of leading lines to mask. Masking only
+    # the first is what shows it is one shot rather than a mode.
+    _line_no=$((_line_no + 1))
+    case "${DRIVER_MASK:-}" in
+        '') ;;
+        all) input_mask ;;
+        *) [ "$_line_no" -gt "$DRIVER_MASK" ] || input_mask ;;
+    esac
+
+    input_readline "${DRIVER_PROMPT_COLS:-0}" || break
     printf 'line=%s\n' "$INPUT_LINE" >>"$DRIVER_OUT"
     input_remember "$INPUT_LINE"
 done
@@ -254,7 +267,8 @@ chmod +x "$SESSION"
 session() {
     : >"$DRIVER_OUT"
     DRIVER_COLS="${2:-80}"
-    export DRIVER_COLS
+    DRIVER_MASK="${3:-}"
+    export DRIVER_COLS DRIVER_MASK
     "$REPO_ROOT/tests/keys.py" --cols "${2:-80}" --input "$1" \
         -- "$SESSION" >/dev/null 2>&1 || :
     sed -n 's/^line=//p' "$DRIVER_OUT"
@@ -640,6 +654,55 @@ else
 
     keys 'x\r'
     assert_eq 'no suggestion set is the prompt as it was' "$KEYS_LINE" 'x'
+
+    # -------------------------------------------------------------------------
+    # Masking
+    # -------------------------------------------------------------------------
+
+    printf '\nMasking\n'
+
+    # What is hidden is the drawing, not the line: the buffer has to come back
+    # exactly as typed, or /config would store a row of asterisks as the key.
+    DRIVER_MASK=1
+    export DRIVER_MASK
+
+    keys 'sk-secret\r'
+    assert_eq 'the line is read as typed' "$KEYS_LINE" 'sk-secret'
+    assert_not_contains 'but none of it is drawn' "$KEYS_ECHO" 'sk-secret'
+    assert_not_contains 'not even a piece of it' "$KEYS_ECHO" 'secret'
+    assert_contains 'asterisks are drawn instead' "$KEYS_ECHO" '*********'
+
+    # One column per character, because every position calculation in the file
+    # is in columns. A mask that drew a different width would put the cursor in
+    # the wrong place on the first backspace.
+    keys 'abc\177d\r'
+    assert_eq 'editing works the same' "$KEYS_LINE" 'abd'
+    assert_contains 'and the mask keeps the column count' "$KEYS_ECHO" \
+        "$(printf '\033[1G** \033[3G')"
+
+    # Across a wrap, where a wrong width would be unmistakable.
+    keys 'abcdefghij\177\r' 10
+    assert_eq 'and it still crosses a wrap' "$KEYS_LINE" 'abcdefghi'
+    assert_contains 'stepping up the same way' "$KEYS_ECHO" "$(printf '\033[1A')"
+
+    # Recall would swap the hidden line for an earlier one the user cannot see
+    # to check, and then submit it. With every line masked, the third one comes
+    # back empty because Up did nothing.
+    assert_eq 'Up does not recall into a masked line' \
+        "$(session 'one\rtwo\r\033[A\r\004' 80 all)" "$(printf 'one\ntwo\n')"
+
+    # A mask left on by accident would hide a line somebody meant to see, and
+    # nothing about that failure is visible - so it lasts exactly one read.
+    # Only the first line here is masked, so Up works on the second: if the
+    # mask had persisted it would have been suppressed and the line left empty.
+    assert_eq 'masking is one shot' \
+        "$(session 'one\r\033[A\r\004' 80 1)" "$(printf 'one\none')"
+
+    DRIVER_MASK=''
+    export DRIVER_MASK
+
+    keys 'plain\r'
+    assert_contains 'and an unmasked line is drawn again' "$KEYS_ECHO" 'plain'
 
     # -------------------------------------------------------------------------
     # Issue #20: erasing across a wrapped row

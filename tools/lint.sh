@@ -94,7 +94,7 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
     # only once CI or the device tries to run the file. Assert on the index
     # rather than the working tree, since the index is what gets pushed.
     for entry in app/chat.sh app/launch.sh app/apply-update.sh app/uninstall.sh \
-        tests/smoke.sh tests/api.sh \
+        tests/smoke.sh tests/config.sh tests/api.sh \
         tests/net.sh tests/history.sh tests/release.sh tests/install.sh \
         tests/stream.sh tests/screen.sh tests/update.sh tests/uninstall.sh \
         tests/arrival.py \

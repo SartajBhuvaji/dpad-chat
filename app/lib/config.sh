@@ -217,6 +217,83 @@ _config_require_positive_int() {
 }
 
 # -----------------------------------------------------------------------------
+# Writing
+# -----------------------------------------------------------------------------
+
+# config_set <key> <value>
+#
+# Rewrites one setting in the settings file, leaving everything else exactly as
+# it was. Called by /config, so the file it edits is one somebody may well have
+# hand-written on a card: comments, spacing, blank lines and settings this
+# version has never heard of all have to survive, because losing a comment
+# somebody typed on a handheld is not a fair price for changing a number.
+#
+# The key is assumed to be one of the known ones; the caller matched it against
+# a list before getting here.
+config_set() {
+    _cs_key="$1"
+    _cs_value="$2"
+
+    [ -n "${CONFIG_FILE:-}" ] || return 1
+
+    _cs_dir=$(dirname "$CONFIG_FILE")
+    mkdir -p "$_cs_dir" 2>/dev/null || return 1
+
+    # Written beside the target and moved over it, so an interrupted write
+    # cannot leave a truncated settings file - which on this file means an app
+    # that comes back with no API key.
+    _cs_tmp="$CONFIG_FILE.new"
+
+    # The file carries the API key, so it is created private and stays private.
+    # FAT32 keeps none of this, but a card imaged onto a real filesystem does.
+    (
+        umask 077
+
+        _cs_done=0
+        if [ -f "$CONFIG_FILE" ]; then
+            while IFS= read -r _cs_line || [ -n "$_cs_line" ]; do
+                # Only a line that actually sets this key is replaced. A
+                # comment mentioning it, or a line for a different key, is
+                # copied through untouched.
+                case "$_cs_line" in
+                    '#'* | *'='*) ;;
+                    *)
+                        printf '%s\n' "$_cs_line"
+                        continue
+                        ;;
+                esac
+
+                _cs_this=$(printf '%s' "${_cs_line%%=*}" | tr -d '[:space:]')
+
+                if [ "$_cs_this" = "$_cs_key" ] && [ "$_cs_done" -eq 0 ]; then
+                    printf '%s=%s\n' "$_cs_key" "$_cs_value"
+                    _cs_done=1
+                elif [ "$_cs_this" = "$_cs_key" ]; then
+                    # A duplicate. The loader takes the last one, so leaving it
+                    # would silently undo the write.
+                    continue
+                else
+                    printf '%s\n' "$_cs_line"
+                fi
+            done <"$CONFIG_FILE"
+        fi
+
+        [ "$_cs_done" -eq 1 ] || printf '%s=%s\n' "$_cs_key" "$_cs_value"
+    ) >"$_cs_tmp" 2>/dev/null || {
+        rm -f "$_cs_tmp" 2>/dev/null || :
+        return 1
+    }
+
+    chmod 600 "$_cs_tmp" 2>/dev/null || :
+    mv -f "$_cs_tmp" "$CONFIG_FILE" 2>/dev/null || {
+        rm -f "$_cs_tmp" 2>/dev/null || :
+        return 1
+    }
+
+    return 0
+}
+
+# -----------------------------------------------------------------------------
 # Queries
 # -----------------------------------------------------------------------------
 

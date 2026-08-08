@@ -16,13 +16,13 @@ same under any theme.
 
 ## Getting in
 
-D-Pad Chat is an ordinary entry in Onion's **Apps** menu once the folder is on the card.
-
-<img src="docs/img/apps.png" alt="Onion's Apps menu with D-Pad Chat selected" width="640">
-
-The tile, closer:
+The title,
 
 <img src="docs/img/app.png" alt="The D-Pad Chat tile" width="640">
+
+D-Pad Chat is an entry in Onion's **Apps** menu once the folder is on the card.
+
+<img src="docs/img/apps.png" alt="Onion's Apps menu with D-Pad Chat selected" width="640">
 
 ---
 
@@ -121,3 +121,8 @@ next launch, because a running script cannot safely be written over.
 <img src="docs/img/update_2.png" alt="/update staged and waiting for the next launch" width="640">
 
 [techdweeb]: https://github.com/OnionUI/Themes/tree/main/themes/TechDweeb%20by%20TechDweeb
+
+
+## Device Image
+
+<img src="docs/img/user_device_image.jpeg" alt="User device" width="640" height="640">

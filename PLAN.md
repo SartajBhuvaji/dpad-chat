@@ -484,6 +484,37 @@ Reply text goes through `fold -s -w "$COLS"` where `COLS` is detected once at st
 (`stty size`, falling back to a constant measured on-device). The keyboard overlay covers
 part of the screen when shown, which is exactly why X-to-hide matters for reading.
 
+### 6.1 Folding replies down to ASCII
+
+The panel draws ASCII and nothing else. `st` renders a multi-byte character as one wrong
+glyph and then swallows the character after it, so `Pokémon` reaches the screen as
+`Pok(C)mon` and `Here's` as `HereP s`. Models emit curly quotes, em dashes and accents
+constantly, so this is most replies rather than a rare case.
+
+**The fold happens in jq, in the same filter that extracts the reply**, and that placement
+is the whole design. jq is handed decoded codepoints. A streamed reply arrives in chunks
+and a chunk boundary can fall in the middle of a multi-byte character — any byte-level
+filter downstream would have to buffer across chunks and reassemble, and would corrupt the
+split character whenever it got that wrong. By the time jq has parsed the JSON there are no
+bytes left to split. `tests/stream.sh` splits `Pokémon` inside the é across two events
+precisely to hold that property down.
+
+Three tiers, each mapping a codepoint to a **string** rather than substituting in place —
+which is what lets `Æ` become `AE` and `…` become `...`:
+
+1. Named characters with a sensible ASCII spelling: quotes, dashes, ellipsis, `≤`, `™`.
+2. Latin-1 accented letters, indexed out of a 64-character table, so `café` reads `cafe`
+   rather than `caf`.
+3. Everything else: one `?` per character. A line of Japanese is then visibly missing
+   rather than silently empty, and the count is per character rather than per byte.
+
+Wrapped in `try … catch .`, so a jq lacking anything used here yields the reply unchanged —
+the wrong glyphs we have today — rather than an empty one, which is the only outcome worse
+than the bug.
+
+The folded text is what goes into `history.json` as well, so a resumed conversation redraws
+what was read rather than what arrived.
+
 ---
 
 ## 7. TLS, and why we don't use `curl -k`

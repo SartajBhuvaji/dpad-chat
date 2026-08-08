@@ -252,6 +252,41 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Folding a reply down to ASCII
+# -----------------------------------------------------------------------------
+
+# The panel draws ASCII and nothing else. `st` renders a multi-byte character as
+# one wrong glyph and then swallows the character after it, so an unfolded reply
+# reaches the screen as "Pok(C)mon" and "HereP s" - which is most replies, since
+# models produce curly quotes and accents constantly.
+
+out=$(ask 'scenario:unicode')
+assert_contains 'an accented letter becomes its base letter' "$out" 'Cafe'
+assert_contains 'and inside a word' "$out" 'Pokemon'
+assert_contains 'a dieresis too' "$out" 'naive'
+assert_contains 'curly quotes become straight ones' "$out" '"Here'"'"'s"'
+assert_contains 'an em dash becomes a hyphen' "$out" 'Cafe - '
+assert_contains 'an ellipsis becomes three dots' "$out" 'how...'
+assert_contains 'a ligature gets both letters' "$out" 'AEsop'
+assert_contains 'and an eszett gets both of its' "$out" 'strasse'
+assert_contains 'a degree sign is spelled out' "$out" '5 degC'
+assert_contains 'a comparison keeps its meaning' "$out" '<= 3'
+
+# One "?" per character rather than per byte, so a line of Japanese reads as two
+# missing characters instead of six, and never as nothing at all.
+assert_contains 'anything with no ASCII spelling is marked' "$out" '??'
+
+# The whole point: not one byte above 126 reaches the terminal. Tested on the
+# high bytes alone rather than on everything outside printable ASCII, because
+# the escapes the app draws with are control characters and belong there.
+high=$(printf '%s' "$out" | LC_ALL=C tr -dc '\200-\377')
+if [ -n "$high" ]; then
+    fail 'no byte above ASCII reaches the screen' "found: $(printf '%s' "$high" | head -c 40)"
+else
+    pass 'no byte above ASCII reaches the screen'
+fi
+
+# -----------------------------------------------------------------------------
 
 printf '\n%s test(s), %s failure(s)\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

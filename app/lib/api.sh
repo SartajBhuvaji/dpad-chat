@@ -33,6 +33,72 @@ API_TRANSPORT='0'
 API_CACERT="${DPAD_CACERT:-}"
 
 # -----------------------------------------------------------------------------
+# Folding a reply down to ASCII
+# -----------------------------------------------------------------------------
+#
+# The panel cannot draw anything outside ASCII. `st` renders a multi-byte
+# character as one wrong glyph and then swallows the character after it, so a
+# reply saying "Pokémon" arrives on screen as "Pok(C)mon" and "Here's" as
+# "HereP s". Models produce curly quotes, em dashes and accents constantly, so
+# this is most replies, not an edge case.
+#
+# Done here in jq rather than downstream in the shell, for one reason that
+# decides it: jq works on decoded codepoints. A streamed reply arrives in
+# chunks, and a chunk boundary can fall in the middle of a multi-byte
+# character - any byte-level filter would have to buffer across chunks and
+# reassemble, and would corrupt the split character if it got that wrong.
+# By the time jq has parsed the JSON there are no bytes left to split.
+#
+# Three tiers. Named characters that have a sensible ASCII spelling become it,
+# including the ones that need more than one character - AE, ss, "..." - which
+# is why this maps each codepoint to a *string* rather than substituting in
+# place. Latin-1 accented letters are indexed out of a table, so "café" reads
+# "cafe" rather than "caf". Everything else becomes a single "?" per character,
+# so a line of Japanese is visibly missing rather than silently empty.
+#
+# `try ... catch .` is the safety net. If a jq on some device lacks something
+# used here, the reply comes through exactly as it does today - wrong glyphs -
+# rather than coming through empty, which is the one outcome worse than the
+# bug this fixes.
+#
+# One long single-quoted string, so nothing in it is at the mercy of the shell.
+# The apostrophes are written as \u0027 for the same reason - spelling them
+# literally would mean closing and reopening the quoting three times, and the
+# result is unreadable. $c and $m are jq's variables and are meant to stay
+# unexpanded, which is what the disable below is for.
+# shellcheck disable=SC2016
+API_JQ_ASCII='
+def ascii:
+  def named: {
+    "160":" ","162":"c","163":"GBP","165":"JPY","169":"(c)","171":"\"",
+    "174":"(r)","176":"deg","183":"*","187":"\"","198":"AE","215":"x",
+    "222":"Th","223":"ss","230":"ae","247":"/","254":"th",
+    "338":"OE","339":"oe",
+    "8194":" ","8195":" ","8199":" ","8201":" ","8202":" ","8208":"-",
+    "8209":"-","8211":"-","8212":"-",
+    "8216":"\u0027","8217":"\u0027","8218":"\u0027","8242":"\u0027",
+    "8220":"\"","8221":"\"","8222":"\"","8243":"\"","8226":"*",
+    "8230":"...","8239":" ","8249":"<",
+    "8250":">","8364":"EUR","8482":"(tm)","8592":"<-","8594":"->",
+    "8722":"-","8734":"inf","8800":"!=","8804":"<=","8805":">="
+  };
+  def latin1:
+    "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty";
+  try (
+    explode
+    | map(
+        . as $c
+        | (named[$c | tostring]) as $m
+        | if $m then $m
+          elif $c == 9 or $c == 10 or ($c >= 32 and $c <= 126) then ([$c] | implode)
+          elif $c >= 192 and $c <= 255 then latin1[$c - 192 : $c - 191]
+          else "?"
+          end)
+    | join("")
+  ) catch .;
+'
+
+# -----------------------------------------------------------------------------
 # Request
 # -----------------------------------------------------------------------------
 
@@ -157,8 +223,9 @@ _api_attempt_stream() {
     {
         curl --config "$API_WORK/curl.cfg" 2>"$API_WORK/curl.err"
         printf '%s' "$?" >"$API_WORK/curl.rc"
-    } | _api_sse_filter | jq -j --unbuffered '.choices[0].delta.content // empty' \
-        2>/dev/null | tee "$API_WORK/reply.txt"
+    } | _api_sse_filter |
+        jq -j --unbuffered "$API_JQ_ASCII"' .choices[0].delta.content // empty | ascii' \
+            2>/dev/null | tee "$API_WORK/reply.txt"
 
     curl_status=$(cat "$API_WORK/curl.rc" 2>/dev/null || printf '1')
     API_TRANSPORT="$curl_status"
@@ -394,8 +461,8 @@ _api_extract_reply() {
         return 1
     fi
 
-    jq -r '.choices[0].message.content // ""' "$API_WORK/body.json" \
-        >"$API_WORK/reply.txt" 2>/dev/null
+    jq -r "$API_JQ_ASCII"' .choices[0].message.content // "" | ascii' \
+        "$API_WORK/body.json" >"$API_WORK/reply.txt" 2>/dev/null
 
     # jq terminates its output with a newline even for an empty string, so the
     # file is never zero bytes. Testing the size here would let a blank reply

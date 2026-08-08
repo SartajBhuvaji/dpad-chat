@@ -98,19 +98,34 @@ The buttons themselves are inherited from `st`'s keyboard (`keyboard.c`). What t
 | D-pad | move key cursor |
 | **A** | press key |
 | **B** | sticky-toggle a key (shift, ctrl) |
-| **L1 / R1** | shift / backspace |
+| **L1 / R1** | shift / backspace — **only while the keyboard is shown** |
 | **Y** | move keyboard between top and bottom |
-| **Start** | Enter — sends the message |
+| **Start** | Enter — sends the message, keyboard shown or hidden |
 | **Select** | quit `st`, exits the app |
+
+**With the keyboard hidden, L1 and R1 type `e` and `t`.** Miyoo maps the shoulder buttons
+to those keyboard keys below anything this app can see, and `st` only intercepts them
+while it is drawing the keyboard; the rest of the time they pass through as the letters.
+
+They arrive as the bytes `e` and `t`, indistinguishable from those keys being pressed on
+the on-screen keyboard, so **the app cannot bind them to anything or suppress them** —
+either would make those two letters untypeable.
+
+The one fix that would work is to discard printable input while the keyboard is hidden,
+since it cannot be typing. That needs to know the keyboard is hidden, and nothing tells
+us: **X** is consumed by `st`, and `st` does **not** resize the terminal when the keyboard
+opens — measured, with `/about` reporting 29 rows both ways. So there is no signal, and
+this is a device behaviour to know about rather than a bug to fix. Anything wanting a
+button of its own has to use one that is not mapped to a letter.
 
 ---
 
 ## 4. On-device mockups
 
-Drawn at **40 columns × 30 rows**. The real grid is **53 columns** — measured on hardware
-with `/about`, so `st` fits 320 pixels across at 6 pixels a glyph and doubles to 640
-afterwards, leaving nothing for a border. These frames are therefore 13 columns narrower
-than the screen they stand for. They are kept as drawn because none of them turns on the
+Drawn at **40 columns × 30 rows**. The real grid is **53 columns by 29 rows** — both
+measured on hardware with `/about`, so `st` fits 320 pixels across at 6 pixels a glyph and
+doubles to 640 afterwards, leaving nothing for a border. These frames are therefore 13
+columns narrower and one row taller than the screen they stand for. They are kept as drawn because none of them turns on the
 exact width, and redrawing them would churn the whole section to no end. Frames are
 cropped vertically to the interesting part.
 
@@ -696,11 +711,17 @@ The keyboard is validated on hardware; everything else is validated in the conta
    theme authors not being able to restyle the tile. Renaming it to something distinctive
    would let them; it is not obviously worth the churn to `/update`, which replaces
    `config.json` and would undo the switcher's rewrite.
-2. ~~Exact terminal column/row count `st` reports at 640×480.~~ **Answered: 53 columns**,
-   measured with `/about` on hardware. The mockups in §4 are drawn at 40 and are that much
-   narrower than the real thing; they are kept for layout rather than redrawn, since none
-   of them turns on the exact width. The row count is still unconfirmed — `/about` reports
-   it now, so the next run on hardware settles it.
+2. ~~Exact terminal column/row count `st` reports at 640×480.~~ **Answered: 53 columns by
+   29 rows**, both measured with `/about` on hardware. The mockups in §4 are drawn at
+   40×30 and are that much narrower than the real thing; they are kept for layout rather
+   than redrawn, since none of them turns on the exact size.
+
+   The height is the more interesting half. 30 was assumed for a long time and never
+   measured — 240 pixels at 8 to a glyph divides evenly, so it looked like arithmetic
+   rather than a guess. The device reports 29, so something takes a row that the division
+   does not account for. Where it goes is not worth chasing: `SCREEN_ROWS` is measured at
+   startup and everything is pinned to that, so the constant only ever applied to a
+   terminal that could not say.
 3. Does busybox `sed` support `-u`, and does the device `jq` support `--unbuffered`?
 4. Does `st -e` need an absolute path, and does **Select**-to-quit exit cleanly enough to
    return to the Onion menu without a stuck process?

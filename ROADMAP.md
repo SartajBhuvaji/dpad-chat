@@ -466,7 +466,7 @@ so the reasons behind the staging survive.
    §5 rather than a loop in `sh`.
 7. **Does `st` render usably while an emulator is `SIGSTOP`ped?** If it does, stage C may
    not need a native binary at all.
-8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×30
+8. **Framebuffer geometry and pixel format.** For stage D. We know the text grid is 53×29
    and that `st` lays out at 320×240 before doubling, which implies the panel is 320×240 —
    but the format has not been looked at.
 9. **RAM headroom with a game suspended.** 128 MB total, and a suspended emulator may keep

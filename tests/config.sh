@@ -203,7 +203,7 @@ DATA="$WORK_DIR/data"
 # between calls on purpose in the persistence case below.
 app() {
     printf '%s\n/quit\n' "$1" |
-        COLUMNS=53 LINES=30 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
+        COLUMNS=53 LINES=29 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
             "$REPO_ROOT/app/chat.sh" 2>&1
 }
 
@@ -292,7 +292,7 @@ assert_not_contains 'and nothing of it reaches the settings file' \
 
 rm -rf "$DATA"
 out=$(printf '/config api_key\nsk-test-0123456789abcdef\n/quit\n' |
-    COLUMNS=53 LINES=30 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
+    COLUMNS=53 LINES=29 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
         "$REPO_ROOT/app/chat.sh" 2>&1)
 assert_contains 'a key entered at the prompt is stored' \
     "$(cat "$DATA/settings.cfg" 2>/dev/null)" 'api_key=sk-test-0123456789abcdef'
@@ -301,7 +301,7 @@ assert_contains 'only redacted' "$out" 'sk-tes'
 
 rm -rf "$DATA"
 out=$(printf '/config api_key\n\n/quit\n' |
-    COLUMNS=53 LINES=30 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
+    COLUMNS=53 LINES=29 DPAD_DATA_DIR="$DATA" NO_COLOR=1 \
         "$REPO_ROOT/app/chat.sh" 2>&1)
 assert_contains 'an empty answer changes nothing' "$out" 'the key is unchanged'
 

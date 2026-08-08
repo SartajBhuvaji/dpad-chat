@@ -284,8 +284,8 @@ cp "$FIXTURE" "$CARD/Roms/recentlist.json"
 app_prompt() {
     DPAD_SYSDIR="$CARD/.tmp_update" \
         DPAD_DATA_DIR="$WORK_DIR/data" \
-        COLUMNS=53 LINES=30 \
-        "$REPO_ROOT/tests/keys.py" --cols 53 --rows 30 --input "$1" \
+        COLUMNS=53 LINES=29 \
+        "$REPO_ROOT/tests/keys.py" --cols 53 --rows 29 --input "$1" \
         -- "$REPO_ROOT/app/chat.sh" 2>/dev/null || :
 }
 

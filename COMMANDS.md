@@ -50,7 +50,7 @@ discarded, because the first thing in a new chat should not be a note about the 
 ```
 version  0.9.0
 width    53 cols
-height   30 rows
+height   29 rows
 host     Miyoo (Onion OS)
 model    gpt-4o-mini
 key      sk-pro...bXQA

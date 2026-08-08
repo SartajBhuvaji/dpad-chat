@@ -15,7 +15,7 @@
 # uses.
 # shellcheck disable=SC2034
 
-SCREEN_DEFAULT_ROWS=30
+SCREEN_DEFAULT_ROWS=29
 
 # Below this there is no room for two bars and a usable transcript, so the
 # bars are dropped rather than squeezing the conversation into three rows.

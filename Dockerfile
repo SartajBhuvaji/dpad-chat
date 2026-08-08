@@ -19,12 +19,13 @@ RUN apk add --no-cache \
 
 WORKDIR /src
 
-# Match the device, and writable state outside the tree. 53 columns is what
-# /about reports on hardware; it was 40 here on an estimate that turned out to
-# be 13 columns narrow, so every wrap the suite exercised fell in the wrong
-# place for the screen it is meant to stand in for.
+# Match the device, and writable state outside the tree. Both numbers are what
+# /about reports on hardware. The width was 40 here on an estimate that turned
+# out to be 13 columns narrow, so every wrap the suite exercised fell in the
+# wrong place; the height was 30 on an estimate that was never measured at all,
+# and the device says 29.
 ENV COLUMNS=53 \
-    LINES=30 \
+    LINES=29 \
     DPAD_DATA_DIR=/tmp/dpad-chat
 
 COPY . /src

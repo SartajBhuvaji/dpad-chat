@@ -147,9 +147,13 @@ SCREEN_STATUS='ready'
 # --- rows --------------------------------------------------------------------
 
 assert_eq 'rows come from LINES when set' "$(LINES=30 _screen_detect_rows)" '30'
+
+# The fallback is 29 because that is what the device reports. It was 30 for a
+# long time on the assumption that 240 pixels at 8 to a glyph divides evenly;
+# it does, and the device says 29 anyway.
 assert_eq 'rows fall back when LINES is not a number' \
-    "$(LINES=tall _screen_detect_rows)" '30'
-assert_eq 'rows fall back when LINES is empty' "$(LINES='' _screen_detect_rows)" '30'
+    "$(LINES=tall _screen_detect_rows)" '29'
+assert_eq 'rows fall back when LINES is empty' "$(LINES='' _screen_detect_rows)" '29'
 
 # --- spinner -----------------------------------------------------------------
 

@@ -515,6 +515,38 @@ than the bug.
 The folded text is what goes into `history.json` as well, so a resumed conversation redraws
 what was read rather than what arrived.
 
+### 6.2 Rendering `**bold**`
+
+Models emit Markdown whatever the system prompt asks for. On a 53-column screen the markers
+are noise, so they become the terminal's own bold.
+
+**Bold is a range, and that is the whole difficulty.** Whether it is open has to carry from
+one streamed chunk to the next, and a `**` can be cut in half by a chunk boundary. `foreach
+inputs` gives jq state across events; a lone trailing `*` is held back until the next chunk
+shows whether it was half of a pair. `tests/stream.sh` sends a reply one character per
+event — the worst a boundary can do to a two-character marker — and requires the drawn
+bytes to be identical to the same reply arriving whole.
+
+**Two renderers, deliberately.** jq renders while streaming, because that is the only place
+the text passes through. `ui.sh` renders for buffered replies and for replayed ones, where
+the whole string is in hand — and it wraps *before* rendering, because `fold` counts bytes
+and escapes inserted first would be counted as visible columns. A test asserts the two
+agree on the same input, since a reply that looked different depending on `stream` would be
+a setting about latency changing appearance.
+
+**The transcript is rebuilt from the events rather than taken from what was drawn.** There
+is no way back from an escape to the markers it replaced, so the streaming path folds the
+same events a second time without rendering. That keeps both paths storing the model's text
+verbatim, which is what `history.json` is for.
+
+`API_CAN_RENDER` is asked once at startup. `foreach inputs` is a different *shape* of jq
+program, and a jq that cannot compile it fails at parse time — which `try` cannot catch, and
+which would mean a reply arriving as nothing rather than as wrong glyphs. The plain filter
+is used if the answer is no.
+
+Colour off means escapes off, not formatting discarded: under `NO_COLOR` or a redirected
+stdout both renderers leave the markers alone.
+
 ---
 
 ## 7. TLS, and why we don't use `curl -k`

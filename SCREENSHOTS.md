@@ -7,6 +7,7 @@ same under any theme.
 
 - [Getting in](#getting-in)
 - [A conversation](#a-conversation)
+- [Knows what you were playing](#knows-what-you-were-playing)
 - [Coming back](#coming-back)
 - [Commands](#commands)
 - [Updating](#updating)
@@ -52,15 +53,13 @@ than all at once at the end. Press **X** to put the keyboard away and read.
 
 <img src="docs/img/question_answered.png" alt="A streamed reply on screen" width="640">
 
-<!-- KNOWS WHAT YOU WERE PLAYING — the three captures for this feature
-     (chat_prev_game_prefilled*.png) were taken against v0.13.0, which had a bug
-     that left the prompt reading `I'm playing {game} -'*}Pokemon...` instead of
-     substituting the name. Fixed since. Retake them and uncomment this.
+---
 
 ## Knows what you were playing
 
-Press **Menu** out of a game, open the app, and the prompt is already holding the game you
-were in, greyed out. **Right** takes it, any other key takes it away.
+Press **Menu** out of a game and open the app. The prompt is already holding the game you
+were in, greyed out, and **Right** takes it — one press instead of the two hundred that
+typing it would cost. Any other key takes it away.
 
 <img src="docs/img/chat_prev_game_prefilled.png" alt="The prompt pre-filled with the game being played" width="640">
 
@@ -68,9 +67,9 @@ Carry on typing the part that is actually your question.
 
 <img src="docs/img/chat_prev_game_prefilled_question.png" alt="The pre-filled opening with a question typed after it" width="640">
 
-<img src="docs/img/chat_prev_game_prefilled_answered.png" alt="The answer to a question about the game" width="640">
+Then **Menu** again puts you back in the game, where you left it.
 
--->
+<img src="docs/img/chat_prev_game_prefilled_answered.png" alt="The answer to a question about the game" width="640">
 
 ---
 

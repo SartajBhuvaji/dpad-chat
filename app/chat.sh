@@ -840,6 +840,7 @@ main() {
     update_init "$APP_DIR" "$DATA_DIR" "$API_CACERT"
     uninstall_init "$APP_DIR"
     game_init
+    api_render_init
 
     ui_init
     screen_init

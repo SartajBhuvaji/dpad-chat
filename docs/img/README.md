@@ -12,6 +12,9 @@ Images used by [SCREENSHOTS.md](../../SCREENSHOTS.md) and [README.md](../../READ
 | `question_thinking.png` | the waiting indicator, counting seconds |
 | `question_answered.png` | a streamed reply, keyboard hidden |
 | `chat_resumed.png` | a conversation resumed after reopening |
+| `chat_prev_game_prefilled.png` | the prompt pre-filled with the game just played |
+| `chat_prev_game_prefilled_question.png` | that opening, with a question typed after it |
+| `chat_prev_game_prefilled_answered.png` | the answer to a question about the game |
 | `help.png` | `/help` |
 | `about.png` | `/about` |
 | `config.png` | `/config` |
@@ -22,7 +25,6 @@ Not yet in use:
 
 | File | Why |
 | --- | --- |
-| `chat_prev_game_prefilled*.png` | taken against v0.13.0, which left `{game}` unsubstituted in the prompt. Fixed since; retake and uncomment the section in SCREENSHOTS.md |
 | `hero.jpg` | not taken yet — the device in hand, running a finished conversation |
 
 Framebuffer captures where the point is the text, photographs where the point is the

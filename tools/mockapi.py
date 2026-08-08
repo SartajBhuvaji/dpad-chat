@@ -41,7 +41,8 @@ MAX_BODY_BYTES = 1 << 20
 
 # Scenarios that have something to stream. Everything else is an error, which
 # the real API also returns as a plain body rather than as events.
-STREAMABLE = {"ok", "long", "multiline", "stream_cut", "echo_payload", "unicode"}
+STREAMABLE = {"ok", "long", "multiline", "stream_cut", "echo_payload", "unicode",
+              "markdown", "markdown_split"}
 
 # What models actually emit: curly quotes, an em dash, an ellipsis, accented
 # Latin, and something with no ASCII spelling at all. The panel can draw none of
@@ -57,6 +58,10 @@ UNICODE_REPLY_PARTS = [
     "mon, na\u00efve, \u00c6sop, stra\u00dfe, 5 \u00b0C, \u2264 3, \u65e5\u672c",
 ]
 UNICODE_REPLY = "".join(UNICODE_REPLY_PARTS)
+
+# Markdown emphasis, which models emit whatever the system prompt asks for. The
+# markers become the terminal's own bold rather than four characters of noise.
+MARKDOWN_REPLY = "Use **Rock Smash** here, then **go** north. 2 * 3 = 6"
 
 # Small enough to keep the suite quick, large enough that a client which
 # buffered the whole response would be visibly different from one that does not.
@@ -277,6 +282,9 @@ class Handler(BaseHTTPRequestHandler):
         elif scenario == "unicode":
             self._send_json(200, _completion(UNICODE_REPLY))
 
+        elif scenario in ("markdown", "markdown_split"):
+            self._send_json(200, _completion(MARKDOWN_REPLY))
+
         elif scenario == "long":
             # Exercises wrapping: far wider than the device's terminal.
             self._send_json(200, _completion(LONG_REPLY))
@@ -347,6 +355,14 @@ class Handler(BaseHTTPRequestHandler):
             cut = False
         elif scenario == "unicode":
             chunks = list(UNICODE_REPLY_PARTS)
+            cut = False
+        elif scenario == "markdown":
+            chunks = [MARKDOWN_REPLY]
+            cut = False
+        elif scenario == "markdown_split":
+            # One character per event: every `**` is cut in half, which is the
+            # worst a chunk boundary can do to a two-character marker.
+            chunks = list(MARKDOWN_REPLY)
             cut = False
         else:
             chunks = [f"You said: {prompt}"]

@@ -8,7 +8,10 @@ SHELL := /bin/sh
 IMAGE := dpad-chat-test
 CARD  ?=
 HOST  ?=
-# Onion's documented login. USER is a shell builtin in make, so it is renamed.
+# Onion's documented login. Named with a trailing underscore because make
+# imports USER from the environment, where the shell has already set it to the
+# caller's own login -- ?= would then never see 'onion'. The override is
+# therefore USER_=me, not USER=me.
 USER_ ?= onion
 
 .PHONY: help check lint test mock sim icon cacert package version install-key docker-build test-docker shell-docker install install-ssh reboot clean
@@ -27,7 +30,7 @@ help:
 	@echo '  test-docker   run check inside the Alpine harness'
 	@echo '  shell-docker  interactive busybox ash in the harness'
 	@echo '  install       copy to an SD card    (make install CARD=/media/me/MIYOO)'
-	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42 [USER=onion])'
+	@echo '  install-ssh   push over SSH         (make install-ssh HOST=192.168.1.42 [USER_=onion])'
 	@echo '  install-key   push over SSH and set the API key (prompts, never echoed)'
 	@echo '  reboot        restart the device       (make reboot HOST=192.168.1.42)'
 	@echo '  clean         remove local run state'
@@ -85,17 +88,17 @@ install:
 	@tools/install.sh '$(CARD)'
 
 install-ssh:
-	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@test -n '$(HOST)' || { echo 'usage: make install-ssh HOST=<ip> [USER_=onion]' >&2; exit 1; }
 	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)'
 
 # The key is prompted for, never taken as a variable: make variables are
 # visible in the process list and land in shell history.
 reboot:
-	@test -n '$(HOST)' || { echo 'usage: make reboot HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@test -n '$(HOST)' || { echo 'usage: make reboot HOST=<ip> [USER_=onion]' >&2; exit 1; }
 	@DPAD_SSH_USER='$(USER_)' tools/reboot.sh '$(HOST)'
 
 install-key:
-	@test -n '$(HOST)' || { echo 'usage: make install-key HOST=<ip> [USER=onion]' >&2; exit 1; }
+	@test -n '$(HOST)' || { echo 'usage: make install-key HOST=<ip> [USER_=onion]' >&2; exit 1; }
 	@DPAD_SSH_USER='$(USER_)' tools/install.sh --ssh '$(HOST)' --key
 
 clean:

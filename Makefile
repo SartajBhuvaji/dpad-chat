@@ -6,8 +6,15 @@
 
 SHELL := /bin/sh
 IMAGE := dpad-chat-test
-CARD  ?=
-HOST  ?=
+# Plain := , not ?= : both names are common enough that something else has
+# usually exported them (conda sets HOST to a build triplet). ?= would import
+# that value, the empty-argument guards below would see it as a real answer,
+# and `make install-ssh` with no HOST would rsync to whatever it happened to
+# hold. A makefile assignment still loses to the command line, so the
+# documented `make install-ssh HOST=<ip>` is unaffected; only inheriting these
+# from the environment stops working.
+CARD  :=
+HOST  :=
 # Onion's documented login. Named with a trailing underscore because make
 # imports USER from the environment, where the shell has already set it to the
 # caller's own login -- ?= would then never see 'onion'. The override is

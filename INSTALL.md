@@ -113,10 +113,12 @@ make install-key HOST=192.168.1.42              # the app, then prompt for the A
 ```
 
 The login is the **device's**, not your computer's and not your WiFi password. Onion's
-default is `onion` / `onion`. If you changed it, pass `USER=`:
+default is `onion` / `onion`. If you changed it, pass `USER_=` — with the trailing
+underscore, because make imports `USER` from your shell and a plain `USER=` would be
+ignored:
 
 ```sh
-make install-ssh HOST=192.168.1.42 USER=me
+make install-ssh HOST=192.168.1.42 USER_=me
 ```
 
 You are asked for the password once. The connection is multiplexed, so the copy and the
